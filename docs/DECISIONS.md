@@ -234,6 +234,56 @@ Admins can merge one skill into another. Graduates keep the higher self-rated le
 **D55. Match emails respect check-in unsubscribes and quiet hours.**
 Graduates can still see their matches on `/me`.
 
+## Reporting (Phase 4)
+
+All metric definitions are in [METRICS.md](METRICS.md). The decisions behind them:
+
+**D56. Status at a milestone uses a window.**
+The status is the latest record reported in [milestone − 90 days, milestone + 45 days], skipping jobs that started after the milestone; nothing in the window means unknown.
+Graduates are measured only once milestone + 45 days has passed, so recent cohorts read as "not yet measurable" rather than as unknowns.
+
+**D57. The employment rate's denominator is "known status".**
+The response rate, the unknown count and a **lower bound** (unknown counted as not employed) are always shown next to it.
+Which statuses count as employed is configurable per report ("Count as employed"). In-field-only is a toggle; jobs with no in-field answer are counted separately.
+
+**D58. Time to first job uses Kaplan–Meier.**
+Graduates without a job are counted until their last known update. Median and quartiles show "not reached" instead of being invented.
+Internships don't count as a first job by default (configurable). A job that started before graduation counts as day 0 and is reported separately.
+
+**D59. Privacy rules: k = 5, with secondary suppression and rate bounds.**
+- Counts of 1–4 are shown as "<5".
+- If one cell in a group with a published total is hidden, a second cell is hidden too.
+- Rates that would reveal a small group show a **bound** ("<10%", ">76%"), which reveals no more than the "<5" cell would. That keeps "always show the response rate" without leaking small counts.
+- `minCell` cannot be set below 5.
+
+**D60. Cohorts with fewer than 5 reportable graduates are excluded from every figure, totals included.**
+Filters select whole cohorts, by program, cohort or graduation date range. This prevents differencing attacks (comparing two date ranges to isolate a small cohort), and a test shows that including or excluding a tiny cohort yields identical results.
+
+**D61. Employers are named only with 5 or more graduates.**
+Every other company is grouped as "Other employers", so a company name can never point to one person.
+
+**D62. Time-to-job privacy.**
+Medians are hidden below 5 job starts. A point on a cohort curve is hidden once fewer than 5 of its graduates are still being followed.
+
+**D63. Exports.**
+- **CSV:** aggregates only. Cells starting with `= + - @` are neutralised to prevent formula injection.
+- **PDF:** generated on the server with `@react-pdf/renderer` (no headless browser).
+- **PNG:** rendered in the browser from the chart SVG, with computed colours inlined; the server logs the download before it happens.
+- **Audit:** every export is written to the audit log with the format and filters used.
+
+**D64. Charts.**
+Recharts with the validated categorical palette (`#2a78d6, #eb6834, #1baf7a, #eda100, #e87ba4, #008300` light; dedicated dark steps). Slots are assigned in fixed order and validated against the app's own surfaces.
+- **Colour follows the cohort:** slots are assigned over all cohorts by graduation order, so filtering never repaints a line.
+- **Contrast:** three light-mode colours are below 3:1 contrast against the surface, so every chart has a "Show data table" twin, plus value labels on bars.
+- **One y-axis per chart.** Legend text uses text colour, in series order.
+- **Every metric has a definition tooltip** that works with keyboard focus and hover.
+
+**D65. "Needs attention" queue (the dashboard).**
+- **Long search:** searching more than 60 days with **no referral created since the current search began**.
+- **Stuck referral:** an open referral with no stage change for more than 14 days.
+- **New openings:** openings from the last 30 days with zero eligible matches.
+- **Also listed:** bounced surveys, stale records, and failed or uncertain emails.
+
 ## Planned decisions for later phases (recorded now, implemented in their phase)
 
 - **Status at 6 or 12 months (Phase 4).** We use the latest record reported between the milestone date minus 90 days and the milestone date plus 45 days; otherwise the status is unknown and counted as unknown.

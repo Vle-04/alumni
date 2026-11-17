@@ -22,6 +22,16 @@ const matchingSchema = z.object({
   longSearchFullDays: z.number().int().min(1).max(730),
 });
 
+const EMPLOYMENT = ["employed_full_time", "employed_part_time", "freelance_contract", "internship", "further_study", "searching", "not_searching"] as const;
+const reportingSchema = z.object({
+  employedStatuses: z.array(z.enum(EMPLOYMENT)).min(1),
+  qualifyingJobStatuses: z.array(z.enum(EMPLOYMENT)).min(1),
+  windowBeforeDays: z.number().int().min(0).max(365),
+  graceDays: z.number().int().min(0).max(365),
+  minCell: z.number().int().min(5).max(50), // never below 5
+  freshnessDays: z.number().int().min(1).max(365),
+});
+
 export const SETTING_DEFAULTS = {
   surveys: {
     skipWindowDays: 14,
@@ -36,9 +46,17 @@ export const SETTING_DEFAULTS = {
     longSearchDays: 60,
     longSearchFullDays: 180,
   } satisfies z.infer<typeof matchingSchema>,
+  reporting: {
+    employedStatuses: ["employed_full_time", "employed_part_time", "freelance_contract", "internship"],
+    qualifyingJobStatuses: ["employed_full_time", "employed_part_time", "freelance_contract"],
+    windowBeforeDays: 90,
+    graceDays: 45,
+    minCell: 5,
+    freshnessDays: 90,
+  } as z.infer<typeof reportingSchema>,
 };
 
-export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema } as const;
+export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema, reporting: reportingSchema } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type Settings = typeof SETTING_DEFAULTS;
 

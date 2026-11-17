@@ -10,7 +10,7 @@ Tracks graduate career outcomes for the Academy:
 
 Graduates report their own status. **The system never scrapes LinkedIn or any other site.**
 
-> **Status:** Phases 1–3 (Foundation, Surveys, Placement) are complete. Reporting and hardening come in Phases 4–5; see [Roadmap](#roadmap).
+> **Status:** Phases 1–4 (Foundation, Surveys, Placement, Reporting) are complete. Hardening comes in Phase 5; see [Roadmap](#roadmap).
 
 ## Quick start
 

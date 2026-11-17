@@ -8,10 +8,12 @@ export default defineConfig({
     projects: [
       {
         resolve: { alias },
+        esbuild: { jsx: "automatic" },
         test: { name: "unit", include: ["src/**/*.test.ts"], environment: "node" },
       },
       {
         resolve: { alias },
+        esbuild: { jsx: "automatic" },
         test: {
           name: "integration",
           include: ["tests/integration/**/*.test.ts"],

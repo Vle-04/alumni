@@ -19,11 +19,17 @@ import * as openings from "@/server/services/openings";
 import * as placement from "@/server/services/placement";
 import * as partner from "@/server/services/partner";
 import * as skillsAdmin from "@/server/services/skills-admin";
+import * as reports from "@/server/services/reports";
+import * as dashboard from "@/server/services/dashboard";
 
-const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin };
+const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin, reports, dashboard };
 
 /** Functions Leadership MAY call: they return aggregates only. */
-export const AGGREGATE_ONLY = new Set(["cohorts.listCohorts", "cohorts.listPrograms"]);
+export const AGGREGATE_ONLY = new Set([
+  "cohorts.listCohorts", "cohorts.listPrograms",
+  "reports.getOutcomesReport", "reports.reportFilterOptions", "reports.exportReport", "reports.logChartExport",
+  "reports.reportToCsv", // pure formatter of an already-safe report
+]);
 /** Internal helpers that take a db handle (not a request context) and are only called by other services. */
 export const INTERNAL = new Set([
   "graduates.buildGraduateWhere",
@@ -71,5 +77,9 @@ describe("Leadership/Marketing cannot reach individual-level services", async ()
   it("aggregate-only functions return no personal fields", async () => {
     const list = await cohorts.listCohorts(ctx);
     expect(JSON.stringify(list)).not.toMatch(/fullName|email/i);
+    const g = await (await import("./helpers")).makeGraduate((await (await import("./helpers")).makeCohort()).id, { name: "Visible Name", email: "visible@example.test" });
+    const { report } = await reports.getOutcomesReport(ctx, {});
+    expect(JSON.stringify(report)).not.toMatch(/Visible Name|visible@example|graduateId/);
+    expect(JSON.stringify(report)).not.toContain(g.id);
   });
 });

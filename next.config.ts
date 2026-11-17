@@ -25,7 +25,7 @@ const securityHeaders = [
 
 const config: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["pg-boss", "nodemailer"],
+  serverExternalPackages: ["pg-boss", "nodemailer", "@react-pdf/renderer"],
   experimental: { serverActions: { bodySizeLimit: "5mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
