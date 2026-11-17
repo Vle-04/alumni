@@ -1,0 +1,2 @@
+full_name,email,phone,cohort,graduation_date,city,country,timezone,remote_preference,open_to_relocate,skills,preferred_roles,linkedin_url,current_status,company,role_title,in_field,start_date,consent_outcomes_reporting,consent_job_matching,consent_share_with_partners
+Ani Example,ani@example.com,+374 91 000000,Web Development 2025 Spring,,Yerevan,Armenia,Asia/Yerevan,hybrid,no,JavaScript:4;React:3,frontend;software_engineering,https://www.linkedin.com/in/example,employed_full_time,Example LLC,Junior Frontend Developer,yes,2025-08-01,yes,yes,no

@@ -1,0 +1,45 @@
+# Local development stack. `docker compose up` starts Postgres, Mailpit, the web app and the job worker.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: alumni
+      POSTGRES_PASSWORD: alumni
+      POSTGRES_DB: alumni
+    ports: ["${DB_HOST_PORT:-5440}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data, ./scripts/db-init:/docker-entrypoint-initdb.d:ro]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alumni -d alumni"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    # Catches every email sent in development; UI at http://localhost:8025
+    image: axllent/mailpit:v1.21
+    ports: ["${MAILPIT_UI_PORT:-8025}:8025", "${MAILPIT_SMTP_PORT:-1025}:1025"]
+
+  web:
+    build: .
+    command: sh -c "npx prisma migrate deploy && npm run start"
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://alumni:alumni@db:5432/alumni
+      SMTP_HOST: mailpit
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  worker:
+    build: .
+    command: npm run worker
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://alumni:alumni@db:5432/alumni
+      SMTP_HOST: mailpit
+    depends_on:
+      db: { condition: service_healthy }
+      web: { condition: service_started }
+
+volumes:
+  pgdata:

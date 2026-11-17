@@ -1,0 +1,612 @@
+// Alumni Tracker data model.
+// Conventions:
+//  - Contact fields (email, phone, LinkedIn URL) are stored encrypted (`*Enc`) with an HMAC
+//    blind index (`*Hash`) where equality lookup is needed. See src/server/crypto.ts.
+//  - No protected attributes (age, gender, nationality, photo, date of birth) exist in this schema.
+//  - EmploymentRecord rows are append-only; corrections reference `supersedesId`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Staff & auth ─────────────────────────────
+
+enum Role {
+  ADMIN
+  CAREER_SERVICES
+  LEADERSHIP
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  role          Role      @default(LEADERSHIP)
+  active        Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  verifiedRecords EmploymentRecord[] @relation("VerifiedBy")
+  createdRecords  EmploymentRecord[] @relation("CreatedBy")
+  referralsMade Referral[]
+  transitions   ReferralTransition[]
+  notifications MatchNotification[]
+  openings      Opening[]
+  imports       ImportBatch[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ───────────────────────────── Programs & cohorts ─────────────────────────────
+
+model Program {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  cohorts   Cohort[]
+}
+
+model Cohort {
+  id             String     @id @default(cuid())
+  programId      String
+  name           String     @unique
+  startDate      DateTime   @db.Date
+  graduationDate DateTime?  @db.Date
+  plannedSize    Int?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  program        Program    @relation(fields: [programId], references: [id])
+  graduates      Graduate[]
+
+  @@index([programId])
+}
+
+// ───────────────────────────── Graduates ─────────────────────────────
+
+enum EmploymentStatus {
+  employed_full_time
+  employed_part_time
+  freelance_contract
+  internship
+  further_study
+  searching
+  not_searching
+  unknown
+}
+
+enum JobSearchStatus {
+  active
+  open_to_offers
+  not_looking
+}
+
+enum RemotePreference {
+  remote_only
+  hybrid
+  onsite
+  any
+}
+
+model Graduate {
+  id                     String            @id @default(cuid())
+  cohortId               String
+  fullName               String
+  preferredName          String?
+  emailEnc               String?
+  emailHash              String?           @unique
+  phoneEnc               String?
+  linkedinUrlEnc         String? // plain text typed by the graduate; NEVER fetched
+  graduationDateOverride DateTime?         @db.Date
+  timezone               String? // IANA zone, e.g. "Asia/Yerevan"
+  city                   String?
+  country                String?
+  remotePreference       RemotePreference  @default(any)
+  openToRelocate         Boolean           @default(false)
+  jobSearchStatus        JobSearchStatus   @default(active)
+  preferredRoleCategories String[]         @default([])
+  // Cached from the latest EmploymentRecord (by reportedAt). Source of truth is the history.
+  currentStatus          EmploymentStatus  @default(unknown)
+  currentStatusAt        DateTime?
+  currentInField         Boolean?
+  searchingSince         DateTime?
+  lastSelfUpdateAt       DateTime?
+  profileTokenVersion    Int               @default(1)
+  unsubscribedAt         DateTime?
+  contactPrefs           Json              @default("{}")
+  anonymizedAt           DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  cohort            Cohort             @relation(fields: [cohortId], references: [id])
+  skills            GraduateSkill[]
+  employmentRecords EmploymentRecord[]
+  consents          Consent[]
+  surveys           SurveyInstance[]
+  emails            OutboundEmail[]
+  codes             OneTimeCode[]
+  notifications     MatchNotification[]
+  referrals         Referral[]
+
+  @@index([cohortId])
+  @@index([currentStatus])
+  @@index([currentStatusAt])
+}
+
+model Skill {
+  id            String          @id @default(cuid())
+  canonicalName String          @unique
+  category      String?
+  synonyms      SkillSynonym[]
+  graduates     GraduateSkill[]
+  openings      OpeningSkill[]
+}
+
+model SkillSynonym {
+  id      String @id @default(cuid())
+  skillId String
+  alias   String @unique // stored lower-cased, trimmed
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+}
+
+model GraduateSkill {
+  graduateId String
+  skillId    String
+  level      Int // self-rated 1–5
+  graduate   Graduate @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+  skill      Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([graduateId, skillId])
+  @@index([skillId])
+}
+
+// ───────────────────────────── Companies & employment ─────────────────────────────
+
+model Company {
+  id            String             @id @default(cuid())
+  canonicalName String             @unique
+  industry      String?
+  isPartner     Boolean            @default(false)
+  website       String?
+  createdAt     DateTime           @default(now())
+  aliases       CompanyAlias[]
+  records       EmploymentRecord[]
+  openings      Opening[]
+  contacts      PartnerContact[]
+  mergeSourceOf CompanyMergeSuggestion[] @relation("MergeSource")
+  mergeTargetOf CompanyMergeSuggestion[] @relation("MergeTarget")
+}
+
+model CompanyAlias {
+  id        String  @id @default(cuid())
+  companyId String
+  alias     String  @unique // normalized key, see domain/companies
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+enum SuggestionStatus {
+  pending
+  accepted
+  rejected
+}
+
+model CompanyMergeSuggestion {
+  id              String           @id @default(cuid())
+  sourceCompanyId String
+  targetCompanyId String
+  similarity      Float
+  status          SuggestionStatus @default(pending)
+  decidedById     String?
+  decidedAt       DateTime?
+  createdAt       DateTime         @default(now())
+  source          Company          @relation("MergeSource", fields: [sourceCompanyId], references: [id], onDelete: Cascade)
+  target          Company          @relation("MergeTarget", fields: [targetCompanyId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceCompanyId, targetCompanyId])
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  internship
+  other
+}
+
+enum SalaryBand {
+  band_0_500
+  band_500_1000
+  band_1000_1500
+  band_1500_2500
+  band_2500_4000
+  band_4000_plus
+  prefer_not_to_say
+}
+
+enum RecordSource {
+  survey_1m
+  survey_3m
+  survey_6m
+  survey_12m
+  self_update
+  staff_entry
+  csv_import
+  referral_hire
+}
+
+model EmploymentRecord {
+  id               String           @id @default(cuid())
+  graduateId       String
+  status           EmploymentStatus
+  companyId        String?
+  roleTitle        String?
+  roleCategory     String?
+  inField          Boolean?
+  startDate        DateTime?        @db.Date
+  endDate          DateTime?        @db.Date
+  employmentType   EmploymentType?
+  salaryBand       SalaryBand?
+  source           RecordSource
+  surveyInstanceId String?          @unique
+  reportedAt       DateTime         @default(now())
+  verifiedById     String?
+  createdById      String?
+  supersedesId     String?
+  // For "searching" records from surveys: what's blocking and what help is wanted (no PII).
+  searchBlockers   String[]         @default([])
+  helpWanted       String[]         @default([])
+  createdAt        DateTime         @default(now())
+
+  graduate   Graduate        @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+  company    Company?        @relation(fields: [companyId], references: [id])
+  verifiedBy User?           @relation("VerifiedBy", fields: [verifiedById], references: [id])
+  createdBy  User?           @relation("CreatedBy", fields: [createdById], references: [id])
+  survey     SurveyInstance? @relation(fields: [surveyInstanceId], references: [id])
+
+  @@index([graduateId, reportedAt])
+  @@index([companyId])
+}
+
+// ───────────────────────────── Consent ─────────────────────────────
+
+enum ConsentPurpose {
+  outcomes_reporting
+  job_matching
+  share_with_partners
+  marketing_testimonial
+}
+
+model Consent {
+  id            String         @id @default(cuid())
+  graduateId    String
+  purpose       ConsentPurpose
+  policyVersion String
+  grantedAt     DateTime       @default(now())
+  revokedAt     DateTime?
+  source        String // "self_update" | "csv_import" | "staff_entry" | "seed"
+  graduate      Graduate       @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+
+  @@index([graduateId, purpose])
+}
+
+// ───────────────────────────── Surveys & email ─────────────────────────────
+
+enum SurveyStatus {
+  scheduled
+  sent
+  completed
+  skipped_recent_update
+  missed
+  bounced
+  cancelled
+}
+
+model SurveyInstance {
+  id             String       @id @default(cuid())
+  graduateId     String
+  milestone      Int // 1 | 3 | 6 | 12 (months after graduation)
+  scheduledFor   DateTime
+  sentAt         DateTime?
+  reminderCount  Int          @default(0)
+  lastReminderAt DateTime?
+  openedAt       DateTime?
+  completedAt    DateTime?
+  status         SurveyStatus @default(scheduled)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  graduate       Graduate     @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+  response       SurveyResponse?
+  record         EmploymentRecord?
+
+  @@unique([graduateId, milestone])
+  @@index([status, scheduledFor])
+}
+
+model SurveyResponse {
+  id               String         @id @default(cuid())
+  surveyInstanceId String         @unique
+  answers          Json
+  createdAt        DateTime       @default(now())
+  survey           SurveyInstance @relation(fields: [surveyInstanceId], references: [id], onDelete: Cascade)
+}
+
+enum EmailState {
+  pending
+  sending
+  sent
+  failed
+  uncertain
+  dead
+  suppressed
+}
+
+model OutboundEmail {
+  id                String     @id @default(cuid())
+  idempotencyKey    String     @unique
+  graduateId        String?
+  kind              String // survey_initial | survey_reminder | match_notification | otp | magic_link_graduate
+  template          String
+  payload           Json       @default("{}") // template variables; never contains contact data
+  state             EmailState @default(pending)
+  attempts          Int        @default(0)
+  lastError         String?
+  providerMessageId String?
+  sendAfter         DateTime   @default(now())
+  lockedAt          DateTime?
+  sentAt            DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  graduate          Graduate?  @relation(fields: [graduateId], references: [id], onDelete: SetNull)
+
+  @@index([state, sendAfter])
+}
+
+model OneTimeCode {
+  id          String    @id @default(cuid())
+  graduateId  String
+  purpose     String // change_email | export_data | delete_account
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  graduate    Graduate  @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+
+  @@index([graduateId, purpose])
+}
+
+model RateLimitBucket {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+}
+
+// ───────────────────────────── Placement ─────────────────────────────
+
+model PartnerContact {
+  id           String   @id @default(cuid())
+  companyId    String
+  name         String
+  emailEnc     String
+  emailHash    String   @unique
+  tokenVersion Int      @default(1)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  openings     Opening[]
+}
+
+enum RemoteMode {
+  remote
+  hybrid
+  onsite
+}
+
+enum Seniority {
+  intern
+  junior
+  mid
+  senior
+}
+
+enum OpeningStatus {
+  pending_moderation
+  open
+  paused
+  closed
+  rejected
+}
+
+model Opening {
+  id                   String         @id @default(cuid())
+  companyId            String
+  title                String
+  description          String
+  roleCategory         String?
+  city                 String?
+  country              String?
+  remoteMode           RemoteMode     @default(onsite)
+  seniority            Seniority      @default(junior)
+  salaryBand           SalaryBand?
+  deadline             DateTime?      @db.Date
+  status               OpeningStatus  @default(open)
+  source               String         @default("staff") // staff | partner_form
+  submittedByPartnerId String?
+  createdById          String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  company              Company        @relation(fields: [companyId], references: [id])
+  submittedBy          PartnerContact? @relation(fields: [submittedByPartnerId], references: [id])
+  createdBy            User?          @relation(fields: [createdById], references: [id])
+  skills               OpeningSkill[]
+  notifications        MatchNotification[]
+  referrals            Referral[]
+
+  @@index([status])
+}
+
+model OpeningSkill {
+  openingId String
+  skillId   String
+  weight    Int     @default(3) // importance 1–5
+  mustHave  Boolean @default(false)
+  opening   Opening @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  skill     Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([openingId, skillId])
+}
+
+enum MatchResponse {
+  interested
+  not_interested
+}
+
+model MatchNotification {
+  id          String         @id @default(cuid())
+  openingId   String
+  graduateId  String
+  sentById    String
+  sentAt      DateTime       @default(now())
+  score       Int
+  response    MatchResponse?
+  respondedAt DateTime?
+  opening     Opening        @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  graduate    Graduate       @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+  sentBy      User           @relation(fields: [sentById], references: [id])
+
+  @@unique([openingId, graduateId])
+}
+
+enum ReferralStatus {
+  suggested
+  graduate_interested
+  referred
+  interviewing
+  offer
+  hired
+  rejected
+  withdrawn
+}
+
+model Referral {
+  id              String               @id @default(cuid())
+  openingId       String
+  graduateId      String
+  referredById    String
+  status          ReferralStatus       @default(suggested)
+  statusChangedAt DateTime             @default(now())
+  notes           String?
+  hireRecordId    String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  opening         Opening              @relation(fields: [openingId], references: [id], onDelete: Cascade)
+  graduate        Graduate             @relation(fields: [graduateId], references: [id], onDelete: Cascade)
+  referredBy      User                 @relation(fields: [referredById], references: [id])
+  transitions     ReferralTransition[]
+
+  @@unique([openingId, graduateId])
+  @@index([status])
+}
+
+model ReferralTransition {
+  id         String          @id @default(cuid())
+  referralId String
+  fromStatus ReferralStatus?
+  toStatus   ReferralStatus
+  actorId    String?
+  at         DateTime        @default(now())
+  note       String?
+  referral   Referral        @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  actor      User?           @relation(fields: [actorId], references: [id])
+
+  @@index([referralId, at])
+}
+
+// ───────────────────────────── Audit, settings, imports ─────────────────────────────
+
+enum ActorType {
+  user
+  graduate
+  partner
+  system
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  actorType  ActorType
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  diff       Json? // contact fields are redacted to {"changed": true}
+  ip         String?
+  userAgent  String?
+  at         DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([at])
+  @@index([action])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model ImportBatch {
+  id           String   @id @default(cuid())
+  uploadedById String
+  fileName     String
+  contentHash  String
+  rowCount     Int
+  status       String // previewed | committed
+  summary      Json
+  createdAt    DateTime @default(now())
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+}

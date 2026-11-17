@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: alumni
+          POSTGRES_PASSWORD: alumni
+          POSTGRES_DB: alumni_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U alumni" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://alumni:alumni@localhost:5432/alumni_test
+      TEST_DATABASE_URL: postgresql://alumni:alumni@localhost:5432/alumni_test
+      APP_URL: http://localhost:3100
+      ACADEMY_TIMEZONE: UTC
+      AUTH_SECRET: ci-only-auth-secret
+      DATA_ENCRYPTION_KEYS: v1:Y2ktb25seS1rZXktMzItYnl0ZXMtbG9uZy0hISEhISE=
+      BLIND_INDEX_KEY: ci-only-blind-index-key
+      TOKEN_SIGNING_KEY: ci-only-token-signing-key
+      EMAIL_PROVIDER: console
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: No-scraping guard
+        run: npm run check:no-scraping
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Unit tests with domain coverage (≥80%)
+        run: npm run test:coverage
+      - run: npx prisma migrate deploy
+      - name: Integration tests
+        run: npm run test:int
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
