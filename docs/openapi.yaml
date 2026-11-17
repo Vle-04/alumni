@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: Alumni Tracker HTTP endpoints
+  version: 1.0.0
+  description: |
+    The HTTP surface of Alumni Tracker that is not a rendered page or a Next.js server action.
+    Staff endpoints authenticate with the Auth.js session cookie (`authjs.session-token`, or
+    `__Secure-authjs.session-token` over HTTPS). Graduate and partner entry points authenticate
+    with HMAC-signed, expiring links; each link is exchanged for a short-lived HttpOnly cookie.
+    The UI's own mutations are server actions (see docs/API.md); they are not a public API.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Links
+    description: Personal-link entry points (no account)
+  - name: Email
+  - name: Reports
+  - name: Privacy
+paths:
+  /u/{token}:
+    get:
+      tags: [Links]
+      summary: Open a graduate's personal link
+      description: |
+        Verifies the token (signature, expiry, token version) and exchanges it for the
+        `alumni_grad` session cookie (2 hours), then redirects to a URL without the token.
+        Has no other side effects, so email link scanners cannot change anything.
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "303":
+          description: |
+            Valid link → `/me`, `/me/survey/{id}` (survey link) or `/me/matches/{id}` (job suggestion).
+            Invalid, expired or revoked → `/link-expired?r=invalid|expired|revoked`.
+          headers:
+            Location: { schema: { type: string } }
+            Set-Cookie: { schema: { type: string }, description: "alumni_grad=…; HttpOnly; SameSite=Lax; Path=/ (Secure over HTTPS)" }
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /p/{token}:
+    get:
+      tags: [Links]
+      summary: Open a partner contact's portal link
+      description: Exchanges a valid partner link (90 days, per-contact version) for the `alumni_partner` cookie (8 hours).
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      responses:
+        "303":
+          description: Valid → `/partner`. Otherwise → `/partner?expired=invalid|expired|revoked`.
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /api/unsubscribe/{token}:
+    post:
+      tags: [Email]
+      summary: One-click unsubscribe (RFC 8058)
+      description: |
+        Target of the `List-Unsubscribe` header in check-in and match emails. Mail clients POST
+        `List-Unsubscribe=One-Click`. Turns off check-in and suggestion emails for the graduate.
+        Idempotent. The token is not bound to the link version, so rotating links never breaks "stop emails".
+      parameters:
+        - $ref: "#/components/parameters/Token"
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, properties: { List-Unsubscribe: { type: string, const: One-Click } } }
+      responses:
+        "200":
+          description: Unsubscribed (or already unsubscribed)
+          content: { application/json: { schema: { type: object, properties: { ok: { const: true } } } } }
+        "400":
+          description: Invalid or expired token
+          content: { application/json: { schema: { type: object, properties: { ok: { const: false } } } } }
+  /api/reports/export:
+    get:
+      tags: [Reports]
+      summary: Download the outcomes report (aggregates only)
+      description: |
+        Requires `report:export` (Admin, Career Services, Leadership/Marketing). The response
+        contains only aggregates that passed small-group suppression (see docs/METRICS.md).
+        Every call is written to the audit log with the format and filters.
+      security: [{ staffSession: [] }]
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, pdf], default: csv } }
+        - { name: programId, in: query, schema: { type: string } }
+        - { name: cohortId, in: query, schema: { type: string } }
+        - { name: from, in: query, description: Graduation month from (inclusive), schema: { type: string, pattern: "^\\d{4}-\\d{2}$", example: "2025-01" } }
+        - { name: to, in: query, description: Graduation month to (inclusive), schema: { type: string, pattern: "^\\d{4}-\\d{2}$", example: "2025-12" } }
+        - name: count
+          in: query
+          description: Statuses counted as employed (repeatable). Defaults to the admin setting.
+          style: form
+          explode: true
+          schema: { type: array, items: { type: string, enum: [employed_full_time, employed_part_time, freelance_contract, internship] } }
+        - { name: inField, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200":
+          description: The report file
+          headers:
+            Content-Disposition: { schema: { type: string, example: 'attachment; filename="alumni-outcomes.csv"' } }
+          content:
+            text/csv:
+              schema: { type: string }
+              example: |
+                section,group,measure,value
+                employment,6 months,employment rate (of known status),71.4%
+                employment,6 months,unknown status,<5
+            application/pdf:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/graduates/{id}/export:
+    get:
+      tags: [Privacy]
+      summary: Subject-access export for one graduate (admin)
+      description: Requires `data:export_all` (Admin). Returns everything held about the graduate. Audited as `data.export_subject`.
+      security: [{ staffSession: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Graduate data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DataExport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: Not found or already deleted, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+components:
+  securitySchemes:
+    staffSession:
+      type: apiKey
+      in: cookie
+      name: authjs.session-token
+  parameters:
+    Token:
+      name: token
+      in: path
+      required: true
+      description: "base64url(JSON payload).base64url(HMAC-SHA256 signature)"
+      schema: { type: string, maxLength: 1024 }
+  responses:
+    TooManyRequests:
+      description: Rate limited (60 requests per 15 minutes per IP)
+      headers: { Retry-After: { schema: { type: integer } } }
+    Unauthenticated:
+      description: No valid staff session
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" }, example: { error: unauthenticated } } }
+    Forbidden:
+      description: The staff role lacks the permission
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" }, example: { error: forbidden } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties: { error: { type: string, enum: [unauthenticated, forbidden, not_found, validation, conflict, rate_limited] } }
+    DataExport:
+      type: object
+      required: [exportedAt, profile, skills, employmentHistory, consents, checkIns, jobSuggestions, referrals]
+      properties:
+        exportedAt: { type: string, format: date-time }
+        profile:
+          type: object
+          properties:
+            fullName: { type: string }
+            email: { type: [string, "null"] }
+            phone: { type: [string, "null"] }
+            linkedinUrl: { type: [string, "null"] }
+            program: { type: string }
+            cohort: { type: string }
+            graduationDate: { type: [string, "null"], format: date }
+        skills: { type: array, items: { type: object, properties: { skill: { type: string }, level: { type: integer, minimum: 1, maximum: 5 } } } }
+        employmentHistory: { type: array, items: { type: object } }
+        consents: { type: array, items: { type: object } }
+        checkIns: { type: array, items: { type: object } }
+        jobSuggestions: { type: array, items: { type: object } }
+        referrals: { type: array, items: { type: object } }

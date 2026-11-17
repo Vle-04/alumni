@@ -32,6 +32,12 @@ const reportingSchema = z.object({
   freshnessDays: z.number().int().min(1).max(365),
 });
 
+const retentionSchema = z.object({
+  anonymizeAfterYears: z.number().int().min(1).max(50),
+  auditLogDays: z.number().int().min(90).max(3650),
+  emailLogDays: z.number().int().min(7).max(3650),
+});
+
 export const SETTING_DEFAULTS = {
   surveys: {
     skipWindowDays: 14,
@@ -54,9 +60,10 @@ export const SETTING_DEFAULTS = {
     minCell: 5,
     freshnessDays: 90,
   } as z.infer<typeof reportingSchema>,
+  retention: { anonymizeAfterYears: 5, auditLogDays: 3 * 365, emailLogDays: 90 } satisfies z.infer<typeof retentionSchema>,
 };
 
-export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema, reporting: reportingSchema } as const;
+export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema, reporting: reportingSchema, retention: retentionSchema } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type Settings = typeof SETTING_DEFAULTS;
 
@@ -66,4 +73,11 @@ export async function getSetting<K extends SettingKey>(key: K, db: Db = prisma):
   const merged = { ...SETTING_DEFAULTS[key], ...(row.value as object) };
   const parsed = SETTING_SCHEMAS[key].safeParse(merged);
   return parsed.success ? (parsed.data as Settings[K]) : SETTING_DEFAULTS[key];
+}
+
+/** Admin: replaces one settings section after validation. */
+export async function saveSetting<K extends SettingKey>(key: K, value: unknown, db: Db = prisma): Promise<Settings[K]> {
+  const parsed = SETTING_SCHEMAS[key].parse(value) as Settings[K];
+  await db.setting.upsert({ where: { key }, create: { key, value: parsed as object }, update: { value: parsed as object } });
+  return parsed;
 }

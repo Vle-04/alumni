@@ -50,3 +50,10 @@ export async function sendLinkAction(id: string) {
   revalidatePath(`/graduates/${id}`);
   return res;
 }
+
+export async function deleteGraduateAction(id: string, _p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  const { deleteGraduateAsStaff } = await import("@/server/services/privacy");
+  const r = await runAction(async () => { await deleteGraduateAsStaff(await staffActionContext(), id, fd.get("confirm")); return null; });
+  if (r.ok) redirect("/graduates");
+  return r;
+}

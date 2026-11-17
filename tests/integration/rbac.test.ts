@@ -21,8 +21,10 @@ import * as partner from "@/server/services/partner";
 import * as skillsAdmin from "@/server/services/skills-admin";
 import * as reports from "@/server/services/reports";
 import * as dashboard from "@/server/services/dashboard";
+import * as privacy from "@/server/services/privacy";
+import * as settingsAdmin from "@/server/services/settings-admin";
 
-const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin, reports, dashboard };
+const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin, reports, dashboard, privacy, settingsAdmin };
 
 /** Functions Leadership MAY call: they return aggregates only. */
 export const AGGREGATE_ONLY = new Set([
@@ -50,6 +52,10 @@ export const INTERNAL = new Set([
   "partner.partnerLink",
   "partner.partnerSessionValue",
   "partner.resolvePartner",
+  // Called only by permission-checked wrappers or the retention job.
+  "privacy.anonymizeGraduate",
+  "privacy.buildDataExport",
+  "privacy.runRetention",
 ]);
 
 describe("Leadership/Marketing cannot reach individual-level services", async () => {

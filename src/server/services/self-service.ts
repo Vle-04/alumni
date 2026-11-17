@@ -169,8 +169,9 @@ const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
 
 /** Sends a 6-digit code to the email ON FILE. */
-export async function requestOtp(ctx: RequestContext, purpose: OtpPurpose) {
+export async function requestOtp(ctx: RequestContext, rawPurpose: OtpPurpose) {
   requireGraduate(ctx);
+  const purpose = z.enum(OTP_PURPOSES).parse(rawPurpose);
   if (!(await checkRateLimit(`otp:${ctx.actor.id}`, 3, 15 * 60))) throw new RateLimitError(15 * 60);
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   await prisma.oneTimeCode.updateMany({ where: { graduateId: ctx.actor.id, purpose, consumedAt: null }, data: { consumedAt: new Date() } }); // older codes stop working

@@ -11,7 +11,7 @@ export async function addContactAction(companyId: string, _p: ActionResult<strin
   return r;
 }
 export async function issueLinkAction(contactId: string, rotate: boolean) {
-  return runAction(async () => issuePartnerLink(await staffActionContext(), contactId, rotate));
+  return runAction(async () => issuePartnerLink(await staffActionContext(), String(contactId), rotate === true));
 }
 export async function updateCompanyAction(id: string, _p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
   const r = await runAction(async () => { await updateCompany(await staffActionContext(), id, formToObject(fd, { booleans: ["isPartner"] })); return null; }, "Saved.");

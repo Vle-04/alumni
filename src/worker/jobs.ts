@@ -5,6 +5,7 @@
 import { prisma } from "@/server/db";
 import { processOutbox } from "@/server/outbox";
 import { runSurveyTick } from "@/server/services/surveys";
+import { runRetention } from "@/server/services/privacy";
 
 export interface JobDef {
   name: string;
@@ -16,6 +17,7 @@ export interface JobDef {
 export const JOBS: JobDef[] = [
   { name: "survey-tick", cron: "*/5 * * * *", description: "Queue due surveys and reminders, then send", run: () => runSurveyTick() },
   { name: "outbox-drain", cron: "* * * * *", description: "Send due emails, retry failures, recover stuck sends", run: () => processOutbox() },
+  { name: "retention", cron: "43 2 * * *", description: "Anonymize graduates past the retention period; delete old audit logs and email logs", run: () => runRetention() },
   {
     name: "housekeeping",
     cron: "17 3 * * *",

@@ -19,9 +19,10 @@ export interface TemplateContext {
 }
 
 export function renderTemplate(name: TemplateName, c: TemplateContext): { subject: string; html: string; text: string } {
+  const privacy = `<a href="${escapeHtml(`${process.env.APP_URL ?? ""}/privacy`)}">${escapeHtml(t("grad.privacyLink"))}</a>`;
   const footer = c.unsubscribeUrl
-    ? `${escapeHtml(t("email.footer"))} <a href="${escapeHtml(c.unsubscribeUrl)}">${escapeHtml(t("email.unsubscribe"))}</a>`
-    : escapeHtml(t("email.footer"));
+    ? `${escapeHtml(t("email.footer"))} ${privacy} · <a href="${escapeHtml(c.unsubscribeUrl)}">${escapeHtml(t("email.unsubscribe"))}</a>`
+    : `${escapeHtml(t("email.footer"))} ${privacy}`;
   const months = String(c.milestone ?? "");
   switch (name) {
     case "survey_initial": {

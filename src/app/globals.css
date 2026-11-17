@@ -10,6 +10,7 @@
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-danger: var(--danger);
+  --color-danger-fg: var(--danger-fg);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -25,8 +26,9 @@
   --accent: #1d4ed8; /* 6.7:1 on white */
   --accent-fg: #ffffff;
   --danger: #b42318;
+  --danger-fg: #ffffff;
   --success: #067647;
-  --warning: #9a5b00;
+  --warning: #7f4a00; /* ≥ 4.5:1 even on its own 10% tint */
   color-scheme: light;
 }
 
@@ -41,6 +43,7 @@
     --accent: #7aa2ff;
     --accent-fg: #0b1020;
     --danger: #ff8a7a;
+    --danger-fg: #1f0a07;
     --success: #5fd49b;
     --warning: #f5b94d;
     color-scheme: dark;

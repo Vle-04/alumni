@@ -284,9 +284,42 @@ Recharts with the validated categorical palette (`#2a78d6, #eb6834, #1baf7a, #ed
 - **New openings:** openings from the last 30 days with zero eligible matches.
 - **Also listed:** bounced surveys, stale records, and failed or uncertain emails.
 
-## Planned decisions for later phases (recorded now, implemented in their phase)
+## Hardening (Phase 5)
 
-- **Status at 6 or 12 months (Phase 4).** We use the latest record reported between the milestone date minus 90 days and the milestone date plus 45 days; otherwise the status is unknown and counted as unknown.
-- **Time to first job (Phase 4).** A survival-analysis method (Kaplan–Meier) that counts graduates who haven't found work yet instead of dropping them.
-- **Small groups (Phase 4).** Any count below 5 is shown as "<5", and a second cell is hidden when needed so the hidden value can't be worked out by subtraction.
-- **Consent and reports (Phase 4/5).** Graduates who revoke `outcomes_reporting` are left out of aggregates from then on. Deleting a graduate anonymises them and keeps their reporting status, so aggregates don't change.
+**D66. Deletion is anonymization.**
+- **Removed:** name (replaced by `Deleted graduate #<hash>`), email, its blind index, phone, LinkedIn URL, location, time zone, preferences, skills, survey answers, referral notes, one-time codes and pending emails.
+- **Kept:** cohort, graduation-date override, consent states, employment history, survey statuses and referral stages.
+- **Result:** reports are byte-for-byte identical after a deletion (tested); all links and sessions stop working; the email can be registered again.
+- **Who can trigger it:** the graduate (one-time code), an Admin (typing DELETE), or the retention job.
+
+**D67. Data export.**
+A graduate downloads all their data as JSON after entering a one-time code. Admins can export on a graduate's behalf (`data:export_all`). Both are audited.
+
+**D68. Retention.**
+A daily job anonymizes graduates N years after graduation (default 5). It deletes audit logs older than 3 years (minimum 90 days) and email logs older than 90 days. Admins configure these under Settings.
+
+**D69. Settings are validated before saving.**
+Matching weights must add up to 100, and the smallest reportable group can't go below 5. Every change is audited.
+
+**D70. Strict nonce Content-Security-Policy.**
+- **Scripts:** a per-request nonce with `'strict-dynamic'`, set in `src/middleware.ts`; no `'unsafe-inline'` scripts.
+- **Styles:** keep `'unsafe-inline'`, which chart and UI libraries need; styles can't run code.
+- **Pages:** all are dynamic so each request gets a nonce. The e2e suite fails on any CSP console violation.
+
+**D71. Server-action arguments are untrusted.**
+A server action can be called with arbitrary arguments, so enum-like arguments (opening status changes, settings keys, one-time-code purposes, booleans) are validated with Zod inside the service, not only typed in TypeScript.
+
+**D72. Dependencies.**
+- **nodemailer:** pinned to 10.x through an npm override. The advisories in its address parsing and SMTP handling are fixed only in 10.x; Auth.js names nodemailer only as an optional peer dependency for a provider we don't use.
+- **postcss and deepmerge-ts:** patched versions pinned via overrides.
+- **Result:** `npm audit --omit=dev` reports 0 vulnerabilities, and CI fails on new high-severity findings.
+
+**D73. Accessibility.**
+- axe runs WCAG 2.0/2.1/2.2 A and AA rules on every main page, in light and dark mode.
+- Alerts use body text colour, with the tone shown by the border and tint. The warning colour was darkened, and danger buttons have their own text colour for dark mode.
+
+**D74. Performance budget.**
+On an emulated slow-4G phone with 4× CPU throttling, the survey page must be usable within 4 seconds and transfer under 200 KB. Measured: about 1.4 s and 155 KB.
+
+**D75. The privacy notice has one source.**
+The `/privacy` page renders `docs/PRIVACY.md` through a small renderer that outputs only React elements, never raw HTML.

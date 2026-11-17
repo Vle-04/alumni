@@ -12,6 +12,7 @@ import { fmtDate, fmtDateTime } from "@/lib/format";
 import { ContactReveal } from "./ContactReveal";
 import { RotateLink } from "./RotateLink";
 import { AddRecordForm } from "./AddRecordForm";
+import { AdminPrivacy } from "./AdminPrivacy";
 import { addRecordAction, verifyRecordAction } from "../actions";
 
 export default async function GraduateDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -143,6 +144,7 @@ export default async function GraduateDetail({ params }: { params: Promise<{ id:
             <p className="mt-2 text-xs text-muted">Only the graduate can change consent, from their personal page.</p>
           </Card>
           {can(role, "graduate:rotate_link") && <Card title="Personal link"><RotateLink id={g.id} /></Card>}
+          {can(role, "graduate:delete") && <Card title="Data requests"><AdminPrivacy id={g.id} /></Card>}
           {can(role, "audit:read") && (
             <Card title="Audit trail">
               <ul className="max-h-80 space-y-1 overflow-y-auto text-xs">

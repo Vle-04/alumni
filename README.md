@@ -10,7 +10,7 @@ Tracks graduate career outcomes for the Academy:
 
 Graduates report their own status. **The system never scrapes LinkedIn or any other site.**
 
-> **Status:** Phases 1–4 (Foundation, Surveys, Placement, Reporting) are complete. Hardening comes in Phase 5; see [Roadmap](#roadmap).
+> **Status:** All five build phases are complete. See [Acceptance criteria](#acceptance-criteria) for the test that proves each requirement.
 
 ## Quick start
 
@@ -58,6 +58,7 @@ npm run dev            # http://localhost:3000
 | `npm test` | Unit and integration tests. Integration tests use `TEST_DATABASE_URL`, which must end in `_test`. |
 | `npm run test:coverage` | Unit tests with domain coverage (threshold 80%) |
 | `npm run test:e2e` | Playwright end-to-end tests (builds must exist: `npm run build`) |
+| `npm run test:e2e -- --project=mobile` | Graduate flows on a Pixel 7 profile, including the slow-phone performance budget |
 | `npm run check:no-scraping` | Fails if scraping libraries, non-allowlisted outbound HTTP or `linkedin.com` access appear in app code |
 
 ## Background jobs
@@ -70,6 +71,7 @@ Jobs run in the `worker` process on **pg-boss**, a durable queue stored in the s
 |---|---|---|
 | `survey-tick` | every 5 min | Queues due milestone surveys (or skips them after a recent self-update), queues reminders (+4 and +10 days, maximum 2), then sends |
 | `outbox-drain` | every minute | Sends due emails, retries transient failures with backoff, recovers sends interrupted by a crash (see [D34](docs/DECISIONS.md)) |
+| `retention` | daily 02:43 | Anonymizes graduates past the retention period (default 5 years after graduation) and deletes old audit and email logs |
 | `housekeeping` | daily 03:17 | Deletes expired one-time codes, rate-limit counters and staff sign-in tokens |
 
 Run any job by hand: `npm run jobs:run -- survey-tick`. Failed emails appear under **Surveys → Failed emails**, where staff can retry or dismiss them.
@@ -117,6 +119,71 @@ After *Interested*, plus the graduate's `share_with_partners` consent, the refer
 
 More detail: [docs/DECISIONS.md](docs/DECISIONS.md).
 
+## Privacy and security in brief
+
+Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also shown at `/privacy`) and [docs/DECISIONS.md](docs/DECISIONS.md).
+
+- **Least data.**
+  - Salary is stored only as bands.
+  - There are no columns for age, gender, nationality or photos.
+  - LinkedIn URLs are plain text that is never fetched; CI fails on scraping code (`check:no-scraping`).
+- **Encryption and audit.**
+  - Email, phone and LinkedIn URL are encrypted with AES-256-GCM using versioned keys, plus HMAC blind indexes for lookups.
+  - Contact details stay hidden until a staff member chooses to view them; every view and every export is audited.
+  - Audit diffs never contain contact values.
+- **Server-side authorization.**
+  - Every service function checks the actor's permission itself.
+  - A test sweeps every service function as a Marketing user and expects a refusal.
+  - Partners see a graduate only after **Interested** + `share_with_partners` consent, re-checked on every read.
+- **Consent** is per purpose, versioned, and revocable from the graduate's page with immediate effect.
+- **Graduate rights.**
+  - Download my data and delete my account, both behind a one-time code.
+  - Deletion anonymizes: personal data is removed, anonymous history is kept, so reports don't change (tested).
+  - Retention: a daily job anonymizes graduates 5 years after graduation (configurable) and prunes old logs.
+- **Web hardening.**
+  - Strict per-request nonce CSP: no inline scripts.
+  - HSTS, `frame-ancestors 'none'`, `nosniff` and `no-referrer`.
+  - HTTP-only, SameSite cookies; server-action origin checks.
+  - Zod validation at every boundary; Prisma parameterized queries only.
+  - Rate limits on every token, code and sign-in endpoint.
+  - Application logs scrub personal data.
+- **Dependencies.**
+  - `npm audit --omit=dev` reports 0 vulnerabilities.
+  - nodemailer is pinned to 10.x through `overrides`; the advisories in earlier versions are fixed only in 10.x.
+
+## Deploying
+
+- **Run behind TLS.** Set `APP_URL=https://…`; cookies then become `Secure` and the CSP adds `upgrade-insecure-requests`.
+- **Keep links out of proxy logs.** Personal links contain tokens, so configure your reverse proxy **not to log the paths** `/u/*`, `/p/*` and `/unsubscribe/*`.
+- **Proxies that rewrite the Host header** need `experimental.serverActions.allowedOrigins` set in `next.config.ts`.
+- **Rotating the encryption key:** prepend a new key, e.g. `DATA_ENCRYPTION_KEYS=v2:<new>,v1:<old>`. New writes use v2 and old data stays readable.
+- **Do not rotate `BLIND_INDEX_KEY`** without re-indexing emails.
+- **Email:** use `EMAIL_PROVIDER=resend` (idempotent sends) where possible. With SMTP, a send interrupted by a crash is marked *uncertain* and never resent automatically.
+- **Workers:** run at least one `worker`. Several are safe, since pg-boss runs each cron tick once.
+
+## Acceptance criteria
+
+| Criterion | Proven by |
+|---|---|
+| Setting a cohort's graduation date schedules exactly 4 surveys per graduate; changing it reschedules with no duplicates | `tests/integration/scheduling.test.ts` |
+| A graduate can update their status from a phone in under 60 s using only the emailed link | `tests/e2e/graduate-flows.spec.ts` (desktop + Pixel 7); `graduate-performance.spec.ts` (usable in ~1.4 s on slow 4G with 4× CPU throttling) |
+| An expired or rotated link is rejected and offers a new-link request | `tests/e2e/graduate-flows.spec.ts`, `tests/integration/self-service.test.ts` |
+| For any opening, matched candidates are ranked and each match has a readable explanation | `src/domain/matching/match.test.ts`, `tests/integration/placement.test.ts`, `tests/e2e/placement.spec.ts` |
+| A graduate's details never reach a partner without both the Interested click and `share_with_partners` consent | `tests/integration/placement.test.ts` ("sharing with partners (acceptance)"), `tests/e2e/placement.spec.ts` |
+| A Marketing user cannot see any individual's name or email anywhere | `tests/integration/rbac.test.ts` (every service function), `tests/e2e/permissions.spec.ts`, `tests/e2e/reports.spec.ts` |
+| The outcomes report shows employment rate with response rate and unknowns, median time to first job and top employers, and suppresses groups smaller than 5 | `src/domain/metrics/metrics.test.ts`, `tests/integration/reports.test.ts`, `tests/e2e/reports.spec.ts` |
+| Moving a referral to `hired` produces an employment record and updates the report | `tests/integration/placement.test.ts`, `tests/integration/reports.test.ts`, `tests/e2e/placement.spec.ts` |
+| Deleting a graduate removes their personal data while aggregate numbers stay unchanged | `tests/integration/privacy.test.ts` ("ACCEPTANCE: deleting a graduate…") |
+| Nothing in the codebase fetches or scrapes LinkedIn or any third-party profile | `npm run check:no-scraping` (in CI) |
+| Accessibility: WCAG 2.2 AA (automated), keyboard, chart table views | `tests/e2e/a11y-security.spec.ts` (axe on every main page, light and dark) |
+
+## Documentation
+
+- [docs/DECISIONS.md](docs/DECISIONS.md): every judgement call, numbered
+- [docs/METRICS.md](docs/METRICS.md): exact metric definitions and privacy rules
+- [docs/PRIVACY.md](docs/PRIVACY.md): the privacy notice for graduates
+- [docs/API.md](docs/API.md) and [docs/openapi.yaml](docs/openapi.yaml): HTTP endpoints and server actions
+
 ## Roadmap
 
 1. ✅ **Foundation**
@@ -131,4 +198,7 @@ More detail: [docs/DECISIONS.md](docs/DECISIONS.md).
    - Openings with a review queue, a synonym-aware matching engine with explanations, "You might be a fit" emails with Interested / Not interested
    - Referral board and table with metrics, hire → employment record, partner portal with the sharing check
 4. **Reporting**: metrics, outcomes dashboard, charts, exports, small-group suppression
-5. **Hardening**: consent and deletion flows, retention job, security and accessibility review, full docs
+5. ✅ **Hardening**
+   - Data export and deletion with one-time codes, retention job, admin settings
+   - Nonce CSP and dependency fixes, axe accessibility pass (light and dark), slow-phone performance budget
+   - PRIVACY, API and OpenAPI docs

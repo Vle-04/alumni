@@ -4,7 +4,8 @@ import { REMOTE_MODES, ROLE_CATEGORIES, SALARY_BANDS } from "@/domain/enums";
 import { prisma, type Db } from "../db";
 import { audit } from "../audit";
 import { requirePermission, type RequestContext } from "../context";
-import { ForbiddenError, NotFoundError } from "../errors";
+import { ForbiddenError, NotFoundError, RateLimitError } from "../errors";
+import { checkRateLimit } from "../rate-limit";
 import { loadSkillDictionary, resolveOrCreateSkill } from "./skills";
 
 const optText = (max: number) => z.preprocess((v) => (typeof v === "string" ? v.trim() || undefined : v ?? undefined), z.string().max(max).optional());
@@ -97,10 +98,11 @@ export async function updateOpening(ctx: RequestContext, id: string, raw: unknow
 const STATUS_ACTIONS = { approve: "open", reject: "rejected", pause: "paused", reopen: "open", close: "closed" } as const;
 
 /** Moderation (approve/reject partner submissions) and lifecycle changes. */
-export async function setOpeningStatus(ctx: RequestContext, id: string, action: keyof typeof STATUS_ACTIONS) {
+export async function setOpeningStatus(ctx: RequestContext, id: string, rawAction: unknown) {
   requirePermission(ctx, "opening:write");
+  // Validated: server actions can be called with arbitrary arguments ("constructor" etc.).
+  const action = z.enum(["approve", "reject", "pause", "reopen", "close"]).parse(rawAction);
   const status = STATUS_ACTIONS[action];
-  if (!status) throw new NotFoundError("Action");
   const before = await prisma.opening.findUnique({ where: { id } });
   if (!before) throw new NotFoundError("Opening");
   await prisma.opening.update({ where: { id }, data: { status } });
@@ -110,6 +112,7 @@ export async function setOpeningStatus(ctx: RequestContext, id: string, action: 
 /** Partner submission from the tokenized portal → moderation queue. */
 export async function submitOpeningAsPartner(ctx: RequestContext, raw: unknown) {
   if (ctx.actor.type !== "partner") throw new ForbiddenError();
+  if (!(await checkRateLimit(`partner-submit:${ctx.actor.id}`, 10, 3600))) throw new RateLimitError(3600);
   const companyId = ctx.actor.companyId;
   const input = openingInputSchema.parse({ ...(raw as object), companyId });
   return prisma.$transaction(async (tx) => {

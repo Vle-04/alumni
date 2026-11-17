@@ -7,7 +7,7 @@ const variants = {
   primary: "bg-accent text-accent-fg hover:opacity-90",
   secondary: "border border-border bg-surface text-fg hover:bg-surface-2",
   ghost: "text-fg hover:bg-surface-2",
-  danger: "bg-danger text-white hover:opacity-90",
+  danger: "bg-danger text-danger-fg hover:opacity-90",
 } as const;
 type Variant = keyof typeof variants;
 
@@ -104,8 +104,16 @@ export function Table({ caption, children, className }: { caption: string; child
 export const Th = ({ className, ...p }: ComponentProps<"th">) => <th scope="col" className={cn("border-b border-border bg-surface-2 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted", className)} {...p} />;
 export const Td = ({ className, ...p }: ComponentProps<"td">) => <td className={cn("border-b border-border px-3 py-2 align-top", className)} {...p} />;
 
+/** Alerts use body ink for text (always ≥ 4.5:1); the tone is carried by the border and tint. */
+const alertTones = {
+  neutral: "border-border bg-surface-2",
+  success: "border-success/50 bg-success/10",
+  warning: "border-warning/60 bg-warning/10",
+  danger: "border-danger/60 bg-danger/10",
+  accent: "border-accent/50 bg-accent/10",
+} as const;
 export function Alert({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-  return <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-md border px-3 py-2 text-sm", badgeTones[tone])}>{children}</div>;
+  return <div role={tone === "danger" ? "alert" : "status"} className={cn("rounded-md border border-l-4 px-3 py-2 text-sm text-fg", alertTones[tone])}>{children}</div>;
 }
 
 export function Pagination({ page, pageCount, hrefFor }: { page: number; pageCount: number; hrefFor: (p: number) => string }) {

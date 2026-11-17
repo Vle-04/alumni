@@ -8,6 +8,7 @@ import { listMatchesForGraduate } from "@/server/services/placement";
 import { Card, Button } from "@/components/ui";
 import { SurveyForm } from "./SurveyForm";
 import { ChangeEmail, ConsentForm, PreferencesForm } from "./MeForms";
+import { DeleteAccount, DownloadData } from "./YourData";
 import { setSubscriptionAction, submitSelfUpdateAction } from "./actions";
 
 export const metadata: Metadata = { title: "My career update" };
@@ -57,6 +58,15 @@ export default async function MePage() {
             <form action={setSubscriptionAction.bind(null, false)}><Button type="submit" variant="ghost" className="underline">{t("email.unsubscribe")}</Button></form>
           )}
         </div>
+      </Card>
+
+      <Card title={t("grad.yourDataTitle")}>
+        <p className="mb-3 text-sm text-muted">{t("grad.yourDataHelp")}</p>
+        <div className="space-y-4">
+          <DownloadData />
+          <DeleteAccount />
+        </div>
+        <p className="mt-4 text-sm"><Link className="underline" href="/privacy">{t("grad.privacyLink")}</Link></p>
       </Card>
     </div>
   );

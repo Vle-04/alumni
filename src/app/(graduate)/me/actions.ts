@@ -43,7 +43,7 @@ export async function updateConsentsAction(_p: ActionResult<null>, fd: FormData)
 }
 
 export async function setSubscriptionAction(subscribed: boolean) {
-  await runAction(async () => self.setEmailSubscription(await ctx(), subscribed));
+  await runAction(async () => self.setEmailSubscription(await ctx(), subscribed === true));
   revalidatePath("/me");
 }
 
@@ -66,5 +66,26 @@ export async function respondToMatchAction(matchId: string, response: "intereste
   const { respondToMatch } = await import("@/server/services/placement");
   const r = fix(await runAction(async () => { await respondToMatch(await ctx(), matchId, response); return null; }));
   revalidatePath(`/me/matches/${matchId}`);
+  return r;
+}
+
+export async function requestPrivacyCodeAction(purpose: "export_data" | "delete_account"): Promise<ActionResult<null>> {
+  const p = purpose === "delete_account" ? "delete_account" : "export_data";
+  return fix(await runAction(async () => { await self.requestOtp(await ctx(), p); return null; }));
+}
+
+export async function exportMyDataAction(_p: ActionResult<string>, fd: FormData): Promise<ActionResult<string>> {
+  const { exportMyData } = await import("@/server/services/privacy");
+  return fix(await runAction(async () => JSON.stringify(await exportMyData(await ctx(), String(fd.get("code") ?? "")), null, 2)));
+}
+
+export async function deleteMyAccountAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  const { deleteMyAccount } = await import("@/server/services/privacy");
+  const { cookies } = await import("next/headers");
+  const r = fix(await runAction(async () => { await deleteMyAccount(await ctx(), String(fd.get("code") ?? "")); return null; }));
+  if (r.ok) {
+    (await cookies()).delete("alumni_grad");
+    redirect("/me/deleted");
+  }
   return r;
 }
