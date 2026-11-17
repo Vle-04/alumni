@@ -1,5 +1,6 @@
 "use client";
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
+import { SkillsEditor } from "@/components/SkillsEditor";
 import { Alert, Button, Field, Input, Select, describedBy } from "@/components/ui";
 import type { ActionResult } from "@/lib/action";
 import { isoDay } from "@/lib/format";
@@ -17,7 +18,6 @@ export function GraduateForm({ action, initial, cohorts, roles, remotes, jobSear
   initial?: Partial<GraduateFormValues>; cohorts: Opt[]; roles: Opt[]; remotes: Opt[]; jobSearch: Opt[]; submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, { ok: false, error: "" } as ActionResult<string>);
-  const [skills, setSkills] = useState(initial?.skills?.length ? initial.skills : [{ name: "", level: 3 }]);
   const fe = !state.ok ? state.fieldErrors ?? {} : {};
   const v = initial ?? {};
   const field = (id: keyof GraduateFormValues, label: string, props: React.ComponentProps<typeof Input> = {}, help?: string) => (
@@ -76,29 +76,7 @@ export function GraduateForm({ action, initial, cohorts, roles, remotes, jobSear
         </div>
       </fieldset>
 
-      <fieldset>
-        <legend className="mb-2 text-base font-semibold">Skills (self-rated 1–5)</legend>
-        <input type="hidden" name="skills" value={JSON.stringify(skills.filter((s) => s.name.trim()))} />
-        {fe.skills && <p className="text-xs text-danger" role="alert">{fe.skills.join(" ")}</p>}
-        <ul className="space-y-2">
-          {skills.map((s, i) => (
-            <li key={i} className="flex flex-wrap items-end gap-2">
-              <div className="min-w-48 flex-1">
-                <label htmlFor={`skill-${i}`} className="text-xs text-muted">Skill {i + 1}</label>
-                <Input id={`skill-${i}`} value={s.name} onChange={(e) => setSkills(skills.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="e.g. JavaScript" />
-              </div>
-              <div className="w-28">
-                <label htmlFor={`level-${i}`} className="text-xs text-muted">Level</label>
-                <Select id={`level-${i}`} value={s.level} onChange={(e) => setSkills(skills.map((x, j) => (j === i ? { ...x, level: Number(e.target.value) } : x)))}>
-                  {[1, 2, 3, 4, 5].map((l) => <option key={l} value={l}>{l}</option>)}
-                </Select>
-              </div>
-              <Button type="button" variant="ghost" onClick={() => setSkills(skills.filter((_, j) => j !== i))} aria-label={`Remove skill ${s.name || i + 1}`}>Remove</Button>
-            </li>
-          ))}
-        </ul>
-        <Button type="button" variant="secondary" className="mt-2" onClick={() => setSkills([...skills, { name: "", level: 3 }])}>Add skill</Button>
-      </fieldset>
+      <SkillsEditor initial={initial?.skills} error={fe.skills} />
 
       <Button type="submit" disabled={pending}>{pending ? "Saving…" : submitLabel}</Button>
     </form>

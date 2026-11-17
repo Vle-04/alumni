@@ -13,6 +13,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
     { href: "/cohorts", label: t("nav.cohorts"), show: can(role, "cohort:write") },
     { href: "/import", label: t("nav.import"), show: can(role, "graduate:import") },
     { href: "/companies", label: t("nav.companies"), show: can(role, "company:read") },
+    { href: "/surveys", label: t("nav.surveys"), show: can(role, "survey:read") },
     { href: "/reports", label: t("nav.reports"), show: can(role, "report:read") },
     { href: "/admin/users", label: t("nav.users"), show: can(role, "user:manage") },
   ].filter((i) => i.show);

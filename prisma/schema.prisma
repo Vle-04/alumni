@@ -336,6 +336,7 @@ model Consent {
 
 enum SurveyStatus {
   scheduled
+  queued // email enqueued in the outbox, not yet delivered
   sent
   completed
   skipped_recent_update

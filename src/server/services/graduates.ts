@@ -9,6 +9,7 @@ import { requirePermission, type RequestContext } from "../context";
 import { ConflictError, NotFoundError } from "../errors";
 import { blindIndex, decryptOpt, encrypt, encryptOpt } from "../crypto";
 import { setGraduateSkills } from "./skills";
+import { onGraduatesCreated, onGraduateScheduleInputsChanged } from "./hooks";
 
 const optText = (max: number) => z.preprocess((v) => (typeof v === "string" ? v.trim() || undefined : v ?? undefined), z.string().max(max).optional());
 const optDate = z.preprocess((v) => (v === "" || v == null ? undefined : v), z.coerce.date().optional());
@@ -173,7 +174,7 @@ export async function createGraduate(ctx: RequestContext, raw: unknown) {
   if (await prisma.graduate.findUnique({ where: { emailHash: blindIndex(input.email) } })) {
     throw new ConflictError("A graduate with this email already exists.");
   }
-  return prisma.$transaction(async (tx) => {
+  const id = await prisma.$transaction(async (tx) => {
     const cohort = await tx.cohort.findUnique({ where: { id: input.cohortId } });
     if (!cohort) throw new NotFoundError("Cohort");
     const g = await tx.graduate.create({ data: { ...profileData(input), ...contactData(input) } });
@@ -181,12 +182,14 @@ export async function createGraduate(ctx: RequestContext, raw: unknown) {
     await audit(tx, ctx, { action: "graduate.create", entityType: "Graduate", entityId: g.id, before: null, after: { ...profileData(input), email: "x", phone: input.phone ? "x" : null } });
     return g.id;
   });
+  await onGraduatesCreated(ctx, [id]);
+  return id;
 }
 
 export async function updateGraduate(ctx: RequestContext, id: string, raw: unknown) {
   requirePermission(ctx, "graduate:write");
   const input = graduateInputSchema.parse(raw);
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const before = await tx.graduate.findUnique({ where: { id } });
     if (!before || before.anonymizedAt) throw new NotFoundError("Graduate");
     const hash = blindIndex(input.email);
@@ -200,8 +203,10 @@ export async function updateGraduate(ctx: RequestContext, id: string, raw: unkno
     const contactAfter = { email: input.email, phone: input.phone ?? null, linkedinUrl: input.linkedinUrl ?? null };
     const strip = ({ emailEnc: _a, phoneEnc: _b, linkedinUrlEnc: _c, emailHash: _d, ...rest }: typeof before) => rest;
     await audit(tx, ctx, { action: "graduate.update", entityType: "Graduate", entityId: id, before: { ...strip(before), ...contactBefore }, after: { ...strip(after), ...contactAfter } });
-    return id;
+    return before.cohortId !== after.cohortId || before.graduationDateOverride?.getTime() !== after.graduationDateOverride?.getTime();
   });
+  if (result) await onGraduateScheduleInputsChanged(ctx, id);
+  return id;
 }
 
 /** Revokes every personal link previously sent to this graduate. */

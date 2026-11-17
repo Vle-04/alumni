@@ -115,15 +115,73 @@ End-to-end tests sign in by creating a database session row directly. That is eq
 Destructive setup (truncate + reseed) refuses to run against any other name (`tests/test-db-guard.ts`).
 Prisma blocks AI agents from running `prisma migrate reset`, so test setup uses `migrate deploy` plus a guarded `TRUNCATE`. `npm run db:reset` is for humans resetting their own dev database.
 
+## Surveys & email (Phase 2)
+
+**D29. One survey per milestone, rescheduled rather than duplicated.**
+Each graduate has exactly one survey row per milestone (1/3/6/12 months), enforced by the unique `(graduateId, milestone)` constraint and by an idempotent planner (`src/domain/scheduling/surveys.ts`).
+- The due time is graduation + N calendar months at 09:00 UTC; quiet hours are applied at send time.
+- Changing the graduation date (cohort-wide, a per-graduate override, or moving a graduate to another cohort) moves only unsent surveys (`scheduled`/`missed`/`cancelled`). Sent and answered surveys are history.
+- Removing the date cancels unsent surveys; setting it again brings them back.
+
+**D30. Old milestones are "missed", never sent.**
+A milestone more than 14 days (configurable) in the past at scheduling time is marked `missed`. Graduates imported from old cohorts don't receive a "1-month" survey years later.
+
+**D31. The skip rule is checked when the survey is due.**
+If the graduate self-updated within the skip window (14 days, configurable), the survey becomes `skipped_recent_update` and counts as a response.
+
+**D32. Survey statuses track real delivery.**
+`scheduled` → `queued` (email enqueued) → `sent` (only once the provider accepted it) → `completed`. A hard bounce sets `bounced`. Unsubscribed or deleted graduates get `cancelled`.
+
+**D33. Reminders: two at most, then stop.**
+They go out 4 and 10 days after the first send (configurable). They stop once the survey is completed or the graduate unsubscribes. Each reminder has its own idempotency key (`survey:<id>:reminder:<n>`).
+
+**D34. Email outbox (`src/server/outbox.ts`).**
+Every email (surveys, reminders, links, codes) is a row with a unique idempotency key. Workers claim rows with `FOR UPDATE SKIP LOCKED`.
+- **Crash during a send:** if the provider de-duplicates (Resend, console), the row is retried with the same key. Plain SMTP can't de-duplicate, so the row becomes `uncertain`. It appears in the dead-letter view and is never resent automatically, so a graduate gets at most one email, never two.
+- **Transient errors** retry with exponential backoff, up to 5 attempts. **Permanent errors** go straight to `dead`.
+- **Stored errors** are scrubbed of email addresses.
+
+**D35. Quiet hours: 21:00–08:00 in the graduate's time zone.**
+The Academy's zone is used if the graduate has none. Quiet hours apply only to survey, reminder and match emails. Links and codes the graduate asked for go out immediately.
+
+**D36. Unsubscribing never happens on a GET request.**
+The unsubscribe link shows a confirmation page, because corporate email link scanners follow links. Mail clients get RFC 8058 one-click `List-Unsubscribe-Post`.
+Unsubscribe tokens last 1 year and aren't tied to the token version, so rotating a graduate's links doesn't break "stop emails".
+
+## Personal links (Phase 2)
+
+**D37. Links are signed, expire, and can be revoked.**
+- **Format:** HMAC-SHA256 signed; payload holds the graduate id, token version, purpose, expiry (30 days) and an optional reference (survey or match id).
+- **Opening a link:** `/u/<token>` checks it, sets a 2-hour HTTP-only `SameSite=Lax` session cookie and redirects with 303 to a clean URL.
+- **Revocation:** the token version is re-checked against the database on every request. Rotating it revokes all old links **and** any open session.
+- **Email scanners:** opening a link has no side effects, so scanners that follow links can't change anything.
+
+**D38. Staff can email a graduate a fresh link but never see it.**
+This prevents staff from signing in as a graduate.
+
+**D39. Requesting a new link never reveals whether an email exists.**
+The response is always the same. Requests are rate-limited per IP (10 per 15 minutes) and per email (3 per hour, dropped silently). Opening a link is rate-limited per IP (60 per 15 minutes).
+
+**D40. One-time codes for sensitive actions.**
+- **Format:** 6 digits, valid 10 minutes, 5 attempts, single use; requesting a new code voids older ones. At most 3 requests per 15 minutes.
+- **Delivery:** codes always go to the email **on file**.
+- **Storage:** the code is stored as a keyed hash. In the outbox it's encrypted and wiped from the email row once sent.
+
+## Survey form (Phase 2)
+
+**D41. Survey length.**
+"Nothing changed" is 1 tap. The employed branch has 7 questions (status, company, role, start month, in-field, salary band (optional), open to other offers). The searching branch has 3 (status, blockers, help wanted).
+"Open to offers" sits on the employed branch because people who are searching are always matched.
+
+**D42. Branching works without JavaScript state.**
+It uses CSS `:has()`. Browsers without `:has()` show every question, and the server ignores answers that don't apply.
+"Yes, nothing changed" is a separate `<form>`, so pressing Enter in a text field can never submit it by accident.
+
+**D43. Response rate definition.**
+(completed + skipped because of a recent self-update) ÷ surveys that went out (sent + completed + bounced + skipped). Surveys that are scheduled, queued, missed or cancelled are not in the denominator.
+
 ## Planned decisions for later phases (recorded now, implemented in their phase)
 
-- **Surveys (Phase 2).**
-  - Each graduate gets exactly one survey per milestone, enforced by a unique `(graduateId, milestone)` constraint.
-  - When the date changes, unsent surveys are rescheduled; sent ones are kept.
-  - Milestones already in the past when a survey is first scheduled are marked `missed` and never sent.
-  - The "self-updated in the last 14 days" skip rule is checked when the survey is due to go out.
-- **No duplicate emails (Phase 2).** Every email goes through an outbox with a unique idempotency key. With SMTP, an email whose send was interrupted by a crash is marked `uncertain` and goes to the dead-letter view rather than being resent: at most one email, never two.
-- **Personal links (Phase 2).** Opening a link exchanges the token for a short-lived HTTP-only cookie, then redirects to a clean URL, so the token stays out of browser history and isn't sent to other sites.
 - **Status at 6 or 12 months (Phase 4).** We use the latest record reported between the milestone date minus 90 days and the milestone date plus 45 days; otherwise the status is unknown and counted as unknown.
 - **Time to first job (Phase 4).** A survival-analysis method (Kaplan–Meier) that counts graduates who haven't found work yet instead of dropping them.
 - **Small groups (Phase 4).** Any count below 5 is shown as "<5", and a second cell is hidden when needed so the hidden value can't be worked out by subtraction.

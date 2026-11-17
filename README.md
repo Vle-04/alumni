@@ -10,7 +10,7 @@ Tracks graduate career outcomes for the Academy:
 
 Graduates report their own status. **The system never scrapes LinkedIn or any other site.**
 
-> **Status:** Phase 1 (Foundation) is complete. Surveys, placement, reporting and hardening come in Phases 2–5; see [Roadmap](#roadmap).
+> **Status:** Phases 1 (Foundation) and 2 (Surveys) are complete. Placement, reporting and hardening come in Phases 3–5; see [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -50,7 +50,8 @@ npm run dev            # http://localhost:3000
 | Command | What it does |
 |---|---|
 | `npm run dev` | Next.js dev server |
-| `npm run worker` | Background job worker (Phase 2+) |
+| `npm run worker` | Background job worker (pg-boss) |
+| `npm run jobs:run -- <job>` | Run one job immediately (no argument lists the jobs) |
 | `npm run db:migrate` | Apply committed migrations |
 | `npm run db:seed` | Seed realistic fake data. Refuses to run on a non-empty database. |
 | `npm run db:reset` | Drop, re-migrate and re-seed the **dev** database |
@@ -59,13 +60,40 @@ npm run dev            # http://localhost:3000
 | `npm run test:e2e` | Playwright end-to-end tests (builds must exist: `npm run build`) |
 | `npm run check:no-scraping` | Fails if scraping libraries, non-allowlisted outbound HTTP or `linkedin.com` access appear in app code |
 
+## Background jobs
+
+Jobs run in the `worker` process on **pg-boss**, a durable queue stored in the same Postgres; there are no in-memory timers.
+- `docker compose up` starts one worker. You can run more for redundancy: each cron tick runs once, on one worker.
+- Every job is idempotent, so a missed or repeated tick never sends duplicates.
+
+| Job | Schedule (UTC) | What it does |
+|---|---|---|
+| `survey-tick` | every 5 min | Queues due milestone surveys (or skips them after a recent self-update), queues reminders (+4 and +10 days, maximum 2), then sends |
+| `outbox-drain` | every minute | Sends due emails, retries transient failures with backoff, recovers sends interrupted by a crash (see [D34](docs/DECISIONS.md)) |
+| `housekeeping` | daily 03:17 | Deletes expired one-time codes, rate-limit counters and staff sign-in tokens |
+
+Run any job by hand: `npm run jobs:run -- survey-tick`. Failed emails appear under **Surveys → Failed emails**, where staff can retry or dismiss them.
+
+## How graduates use it
+
+- **No account.** Every survey email contains a fresh personal link (`/u/<token>`, valid 30 days). Opening it starts a 2-hour session on `/me`.
+- **On `/me` a graduate can:**
+  - update their status (one tap for "nothing changed")
+  - edit job-search preferences and skills
+  - change each consent separately (effective immediately)
+  - change their email (needs a 6-digit code sent to the current address)
+  - stop or restart check-in emails
+- **If a link has expired or was revoked,** they get a "send me a new link" page. It never reveals whether an email is registered.
+- **Staff can** revoke all of a graduate's links, or email them a fresh one, from the graduate page.
+
 ## Architecture
 
 ```
             ┌──────────────── Next.js (web) ────────────────┐      ┌──── worker ────┐
  Browser ──▶│ app/ (pages, server actions, route handlers)  │      │ pg-boss jobs   │
-            │        │ RequestContext (actor, ip)           │      │ (Phase 2+)     │
-            │        ▼                                      │      └───────┬────────┘
+            │        │ RequestContext (actor, ip)           │      │ survey-tick,   │
+            │        ▼                                      │      │ outbox-drain…  │
+            │                                               │      └───────┬────────┘
             │ server/services/*  ── requirePermission() ────┼──────────────┤
             │        │                 audit()               │              │
             │        ▼                                      │              │
@@ -91,7 +119,9 @@ More detail: [docs/DECISIONS.md](docs/DECISIONS.md).
    - Encryption, graduate records (list, filters, stale view, detail, create/edit), employment timeline
    - CSV import with dry run, company normalisation and merge queue
    - Seed data, CI
-2. **Surveys**: scheduler, outbox with idempotent email, signed personal links, survey and self-update forms, reminders, quiet hours, dead-letter view
+2. ✅ **Surveys**
+   - Scheduler, outbox with idempotent email, signed personal links
+   - Survey and self-update forms, one-time codes, reminders, quiet hours, dead-letter view, response rates
 3. **Placement**: openings, matching engine with explanations, notifications, referral pipeline, partner portal
 4. **Reporting**: metrics, outcomes dashboard, charts, exports, small-group suppression
 5. **Hardening**: consent and deletion flows, retention job, security and accessibility review, full docs

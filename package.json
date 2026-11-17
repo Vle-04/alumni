@@ -22,7 +22,8 @@
     "test:int": "vitest run --project integration",
     "test:coverage": "vitest run --project unit --coverage",
     "test:e2e": "playwright test",
-    "check:no-scraping": "tsx scripts/check-no-scraping.ts"
+    "check:no-scraping": "tsx scripts/check-no-scraping.ts",
+    "jobs:run": "tsx scripts/run-job.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

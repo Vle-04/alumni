@@ -13,8 +13,10 @@ import * as companies from "@/server/services/companies";
 import * as cohorts from "@/server/services/cohorts";
 import * as users from "@/server/services/users";
 import * as importSvc from "@/server/services/import";
+import * as surveys from "@/server/services/surveys";
+import * as selfService from "@/server/services/self-service";
 
-const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc };
+const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService };
 
 /** Functions Leadership MAY call: they return aggregates only. */
 export const AGGREGATE_ONLY = new Set(["cohorts.listCohorts", "cohorts.listPrograms"]);
@@ -24,6 +26,15 @@ export const INTERNAL = new Set([
   "employment.appendEmploymentRecord",
   "employment.refreshCurrentStatus",
   "companies.resolveCompany",
+  // System jobs (run by the worker with a system context, never from a request).
+  "surveys.scheduleSurveysForGraduates",
+  "surveys.scheduleSurveysForCohort",
+  "surveys.runSurveyTick",
+  // Public, token-authenticated entry points: they act only on the graduate the token names
+  // and return nothing about anyone (requestNewLink always answers "ok").
+  "selfService.requestNewLink",
+  "selfService.unsubscribeByToken",
+  "selfService.consumeOtp",
 ]);
 
 describe("Leadership/Marketing cannot reach individual-level services", async () => {

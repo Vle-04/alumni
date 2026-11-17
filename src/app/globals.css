@@ -58,3 +58,14 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ─── Survey branching without JavaScript ───────────────────────────────
+   Every branch is visible by default (works in any browser). Where :has() is supported,
+   only the branch matching the selected status is shown. The server validates regardless. */
+@supports selector(:has(*)) {
+  .survey .branch { display: none; }
+  .survey:has(input[name="status"][value^="employed_"]:checked) .branch-employed,
+  .survey:has(input[name="status"][value="freelance_contract"]:checked) .branch-employed,
+  .survey:has(input[name="status"][value="internship"]:checked) .branch-employed,
+  .survey:has(input[name="status"][value="searching"]:checked) .branch-searching { display: block; }
+}

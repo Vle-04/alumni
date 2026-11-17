@@ -1,8 +1,22 @@
 /**
  * Cross-feature side effects, kept in one place so services don't import each other in cycles.
- * Phase 2 wires survey scheduling in here.
  */
+import { prisma } from "../db";
 import type { RequestContext } from "../context";
+import { audit } from "../audit";
+import { scheduleSurveysForCohort, scheduleSurveysForGraduates } from "./surveys";
 
-export async function onCohortGraduationDateChanged(_ctx: RequestContext, _cohortId: string): Promise<void> {}
-export async function onGraduatesCreated(_ctx: RequestContext, _graduateIds: string[]): Promise<void> {}
+/** Setting or changing a cohort's graduation date (re)schedules every graduate's surveys. */
+export async function onCohortGraduationDateChanged(ctx: RequestContext, cohortId: string): Promise<void> {
+  const r = await scheduleSurveysForCohort(prisma, cohortId);
+  await audit(prisma, ctx, { action: "survey.reschedule_cohort", entityType: "Cohort", entityId: cohortId, meta: r });
+}
+
+export async function onGraduatesCreated(_ctx: RequestContext, graduateIds: string[]): Promise<void> {
+  await scheduleSurveysForGraduates(prisma, graduateIds);
+}
+
+/** Cohort or graduation-date override changed for one graduate. */
+export async function onGraduateScheduleInputsChanged(_ctx: RequestContext, graduateId: string): Promise<void> {
+  await scheduleSurveysForGraduates(prisma, [graduateId]);
+}

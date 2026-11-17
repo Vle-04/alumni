@@ -5,6 +5,7 @@ import { formToObject, runAction, type ActionResult } from "@/lib/action";
 import { staffActionContext } from "@/server/session";
 import * as graduates from "@/server/services/graduates";
 import { addEmploymentRecordAsStaff, verifyEmploymentRecord } from "@/server/services/employment";
+import { sendProfileLinkAsStaff } from "@/server/services/surveys";
 
 const FORM_OPTS = { arrays: ["preferredRoleCategories"], booleans: ["openToRelocate"], json: ["skills"] };
 
@@ -42,4 +43,10 @@ export async function addRecordAction(id: string, _p: ActionResult<unknown>, fd:
 export async function verifyRecordAction(graduateId: string, recordId: string) {
   await runAction(async () => verifyEmploymentRecord(await staffActionContext(), recordId));
   revalidatePath(`/graduates/${graduateId}`);
+}
+
+export async function sendLinkAction(id: string) {
+  const res = await runAction(async () => { await sendProfileLinkAsStaff(await staffActionContext(), id); return null; }, "A fresh personal link was emailed to the graduate.");
+  revalidatePath(`/graduates/${id}`);
+  return res;
 }
