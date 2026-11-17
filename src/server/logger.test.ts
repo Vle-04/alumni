@@ -12,6 +12,12 @@ describe("logger scrubbing", () => {
       skipped: 3, ip: "[redacted]", clientIp: "[redacted]",
     });
   });
+  it.each(["ip", "IP", "ipAddress", "remoteAddress", "x-forwarded-for", "forwardedFor", "x-real-ip", "clientIp"])("hides an IP under the key %s", (key) => {
+    expect(__test.scrub({ [key]: "203.0.113.7" })).toEqual({ [key]: "[redacted]" });
+  });
+  it("keeps look-alike keys visible", () => {
+    expect(__test.scrub({ skipped: 1, description: "d", membership: "m" })).toEqual({ skipped: 1, description: "d", membership: "m" });
+  });
   it("masks phone numbers and scrubs stack traces", () => {
     expect(__test.scrub("call +1 555 0177 now")).toBe("call [phone] now");
     expect(__test.scrub("2026-11-17T10:00:00Z")).toBe("2026-11-17T10:00:00Z"); // timestamps untouched
