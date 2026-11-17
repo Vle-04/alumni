@@ -114,8 +114,9 @@ describe("deletion leaves no trace of name or email", () => {
 
     // 3. Placement: notification, interest, referral with staff notes, partner disclosure.
     for (const p of ["job_matching", "share_with_partners"] as const) await setConsent(prisma, g, id, p, true, "self_update");
-    // …and in an opening description staff wrote with them in mind.
-    const opening = await prisma.opening.create({ data: { companyId: company.id, title: "Analyst", description: `Analyse data. Ideal for ${NAME}, contact ${EMAIL}.`, status: "open", remoteMode: "remote" } });
+    // …and in an opening description staff wrote with them in mind. Openings are SHARED records, so
+    // only the full name as it is at deletion time (plus email/phone) is scrubbed there (D99).
+    const opening = await prisma.opening.create({ data: { companyId: company.id, title: "Analyst", description: `Analyse data. Ideal for ${NEW_NAME}, contact ${EMAIL}.`, status: "open", remoteMode: "remote" } });
     const matchId = await notifyGraduate(cs, opening.id, id);
     await respondToMatch(g, matchId, "interested");
     const ref = await prisma.referral.findFirstOrThrow({ where: { graduateId: id } });
@@ -165,7 +166,7 @@ describe("deletion leaves no trace of name or email", () => {
     expect(freelance.roleTitle).toMatch(/^Founder \(\[removed\]( \[removed\])?\)$/);
     expect(freelance).toMatchObject({ status: "freelance_contract", companyId: expect.any(String), startDate: new Date("2025-01-01T00:00:00Z") });
     expect((await prisma.company.findUniqueOrThrow({ where: { id: recs.find((r) => r.companyId)!.companyId! } })).canonicalName).toBe("[removed] Consulting");
-    expect((await prisma.opening.findUniqueOrThrow({ where: { id: opening.id } })).description).toMatch(/^Analyse data\. Ideal for \[removed\]( \[removed\])?, contact \[removed\]\.$/);
+    expect((await prisma.opening.findUniqueOrThrow({ where: { id: opening.id } })).description).toBe("Analyse data. Ideal for [removed], contact [removed].");
     const { generatedAt: _a, ...rb } = reportBefore;
     const { generatedAt: _b, ...ra } = (await getOutcomesReport(cs, {}, reportNow)).report;
     expect(ra).toEqual(rb);

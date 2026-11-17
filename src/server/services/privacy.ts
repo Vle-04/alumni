@@ -15,7 +15,7 @@ import { prisma, type Db } from "../db";
 import { audit } from "../audit";
 import { requirePermission, type RequestContext } from "../context";
 import { blindIndex, decryptOpt } from "../crypto";
-import { scrubAuditPayload } from "@/domain/audit/redact";
+import { identifiersFor, removeWholeWords, scrubAuditPayload } from "@/domain/audit/redact";
 import type { Prisma } from "@prisma/client";
 import { ForbiddenError, NotFoundError } from "../errors";
 import { getSetting } from "../settings";
@@ -27,7 +27,11 @@ export async function anonymizeGraduate(db: Db, ctx: RequestContext, graduateId:
   if (!g) throw new NotFoundError("Graduate");
   if (g.anonymizedAt) return;
   const email = decryptOpt(g.emailEnc);
-  const needles = [g.fullName, ...g.fullName.split(/\s+/).filter((p) => p.length >= 4), g.preferredName ?? "", email ?? "", decryptOpt(g.phoneEnc) ?? ""].filter(Boolean);
+  // own = everything that identifies them (incl. single name parts) — for their own records only;
+  // shared = full name, email, phone — for records other people also rely on. See DECISIONS D99.
+  const ids = identifiersFor({ fullName: g.fullName, preferredName: g.preferredName, email, phone: decryptOpt(g.phoneEnc) });
+  const own = [...ids.full, ...ids.parts];
+  const shared = ids.full;
   const label = `Deleted graduate #${createHash("sha256").update(g.id).digest("hex").slice(0, 8)}`;
   await db.graduate.update({
     where: { id: graduateId },
@@ -46,23 +50,22 @@ export async function anonymizeGraduate(db: Db, ctx: RequestContext, graduateId:
   await db.outboundEmail.updateMany({ where: { graduateId }, data: { payload: {}, lastError: null } });
   await db.referral.updateMany({ where: { graduateId }, data: { notes: null } });
   await db.referralTransition.updateMany({ where: { referral: { graduateId } }, data: { note: null } });
-  await scrubLinkedFreeText(db, graduateId, needles);
+  await scrubLinkedFreeText(db, graduateId, own, shared);
 
-  // Audit log: scrub stored diffs/meta about this person (rows about them, rows by them, and any
-  // other row whose payload contains their name/email/phone), and drop IPs/UAs of their own actions.
-  const mentioning = await findIdsMentioning(db, `"AuditLog"`, `diff::text`, needles);
+  // Audit log. Entries ABOUT this person (or by them): personal keys + every identifier.
+  // Entries about anything/anyone else that merely mention them: full name/email/phone only.
+  const mentioning = await findIdsMentioning(db, `"AuditLog"`, `diff::text`, shared);
   const rows = await db.auditLog.findMany({
     where: { OR: [{ entityId: graduateId }, { actorType: "graduate", actorId: graduateId }, { id: { in: mentioning } }] },
-    select: { id: true, diff: true, actorType: true, actorId: true, ip: true },
+    select: { id: true, diff: true, actorType: true, actorId: true, entityId: true, ip: true },
   });
   const ownIps = new Set<string>();
   for (const r of rows) {
-    const own = r.actorType === "graduate" && r.actorId === graduateId;
-    if (own && r.ip) ownIps.add(r.ip);
-    await db.auditLog.update({
-      where: { id: r.id },
-      data: { diff: r.diff === null ? undefined : (scrubAuditPayload(r.diff, needles) as Prisma.InputJsonValue), ...(own ? { ip: null, userAgent: null } : {}) },
-    });
+    const byThem = r.actorType === "graduate" && r.actorId === graduateId;
+    const about = byThem || r.entityId === graduateId;
+    if (byThem && r.ip) ownIps.add(r.ip);
+    const diff = r.diff === null ? undefined : (scrubAuditPayload(r.diff, about ? own : shared, { redactKeys: about }) as Prisma.InputJsonValue);
+    await db.auditLog.update({ where: { id: r.id }, data: { diff, ...(byThem ? { ip: null, userAgent: null } : {}) } });
   }
   if (ctx.actor.type === "graduate" && ctx.ip) ownIps.add(ctx.ip);
   // Rate-limit keys may contain a keyed hash of the email (new-link requests) or the person's IPs.
@@ -74,18 +77,10 @@ export async function anonymizeGraduate(db: Db, ctx: RequestContext, graduateId:
   await audit(db, auditCtx, { action: "graduate.anonymize", entityType: "Graduate", entityId: graduateId, meta: { reason } });
 }
 
-/** Case-insensitively replaces every needle in `text` with "[removed]". */
-export function removeNeedles(text: string, needles: readonly string[]): string {
-  let out = text;
-  for (const n of [...needles].filter((x) => x.trim().length >= 3).sort((a, b) => b.length - a.length)) {
-    out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "[removed]");
-  }
-  return out;
-}
-
 async function findIdsMentioning(db: Db, table: string, column: string, needles: readonly string[]): Promise<string[]> {
   const ids = new Set<string>();
   for (const n of needles.filter((x) => x.trim().length >= 3)) {
+    // Substring pre-filter only; the actual replacement is whole-word (removeWholeWords).
     const rows = await db.$queryRawUnsafe<{ id: string }[]>(`SELECT id FROM ${table} WHERE ${column} ILIKE $1`, `%${n}%`);
     rows.forEach((r) => ids.add(r.id));
   }
@@ -94,39 +89,47 @@ async function findIdsMentioning(db: Db, table: string, column: string, needles:
 
 /**
  * Free text linked to the graduate may contain their name/email/phone (typed by them or by staff).
- * Replace those strings with "[removed]" — never touching structured fields that metrics use
- * (status, dates, company id, role category).
+ * Whole-word matches are replaced with "[removed]"; structured fields that metrics use (status,
+ * dates, company id, role category) are never touched.
+ *   OWN records (their job titles; a company only they are linked to): all identifiers.
+ *   SHARED records (openings, companies others rely on, other people's email payloads): full name,
+ *   email and phone only — never single name parts, which are ordinary words there.
  */
-async function scrubLinkedFreeText(db: Db, graduateId: string, needles: readonly string[]) {
-  const has = (t: string | null | undefined) => Boolean(t) && removeNeedles(t!, needles) !== t;
-  // Job titles in their employment history.
-  for (const r of await db.employmentRecord.findMany({ where: { graduateId }, select: { id: true, roleTitle: true, companyId: true } })) {
-    if (has(r.roleTitle)) await db.employmentRecord.update({ where: { id: r.id }, data: { roleTitle: removeNeedles(r.roleTitle!, needles) } });
+async function scrubLinkedFreeText(db: Db, graduateId: string, own: readonly string[], shared: readonly string[]) {
+  const changes = (t: string | null | undefined, n: readonly string[]) => Boolean(t) && removeWholeWords(t!, n) !== t;
+  // Their own job titles.
+  for (const r of await db.employmentRecord.findMany({ where: { graduateId }, select: { id: true, roleTitle: true } })) {
+    if (changes(r.roleTitle, own)) await db.employmentRecord.update({ where: { id: r.id }, data: { roleTitle: removeWholeWords(r.roleTitle!, own) } });
   }
-  // Company names they typed (shared rows: rename in place, keep the id so metrics are unchanged).
-  const companyIds = (await db.employmentRecord.findMany({ where: { graduateId, companyId: { not: null } }, select: { companyId: true } })).map((r) => r.companyId!);
-  for (const c of await db.company.findMany({ where: { id: { in: companyIds } }, include: { aliases: true } })) {
-    if (has(c.canonicalName)) {
-      let name = removeNeedles(c.canonicalName, needles);
-      for (let i = 2; await db.company.findFirst({ where: { canonicalName: name, NOT: { id: c.id } } }); i++) name = `${removeNeedles(c.canonicalName, needles)} (${i})`;
+  // Company names: renamed ONLY if nobody else relies on the company — no other graduate's record,
+  // no openings, no partner contacts, not a partner. Otherwise left unchanged (DECISIONS D99).
+  const companyIds = [...new Set((await db.employmentRecord.findMany({ where: { graduateId, companyId: { not: null } }, select: { companyId: true } })).map((r) => r.companyId!))];
+  for (const c of await db.company.findMany({ where: { id: { in: companyIds } }, include: { aliases: true, _count: { select: { openings: true, contacts: true } } } })) {
+    const othersLinked = await db.employmentRecord.count({ where: { companyId: c.id, graduateId: { not: graduateId } } });
+    if (othersLinked > 0 || c._count.openings > 0 || c._count.contacts > 0 || c.isPartner) continue;
+    if (changes(c.canonicalName, own)) {
+      const base = removeWholeWords(c.canonicalName, own);
+      let name = base;
+      for (let i = 2; await db.company.findFirst({ where: { canonicalName: name, NOT: { id: c.id } } }); i++) name = `${base} (${i})`;
       await db.company.update({ where: { id: c.id }, data: { canonicalName: name } });
     }
-    for (const a of c.aliases) if (has(a.alias)) await db.companyAlias.delete({ where: { id: a.id } });
+    for (const a of c.aliases) if (changes(a.alias, own)) await db.companyAlias.delete({ where: { id: a.id } });
   }
-  // Openings they were suggested for / referred to.
+  // Openings they were suggested for / referred to — partner records, so SHARED.
   const openingIds = [
     ...(await db.referral.findMany({ where: { graduateId }, select: { openingId: true } })).map((r) => r.openingId),
     ...(await db.matchNotification.findMany({ where: { graduateId }, select: { openingId: true } })).map((r) => r.openingId),
   ];
   for (const o of await db.opening.findMany({ where: { id: { in: openingIds } }, select: { id: true, title: true, description: true } })) {
-    if (has(o.title) || has(o.description)) {
-      await db.opening.update({ where: { id: o.id }, data: { title: removeNeedles(o.title, needles), description: removeNeedles(o.description, needles) } });
+    if (changes(o.title, shared) || changes(o.description, shared)) {
+      await db.opening.update({ where: { id: o.id }, data: { title: removeWholeWords(o.title, shared), description: removeWholeWords(o.description, shared) } });
     }
   }
-  // Queued/sent email payloads of OTHER graduates that quote that text (e.g. an opening title).
-  for (const id of await findIdsMentioning(db, `"OutboundEmail"`, `payload::text`, needles)) {
-    const e = await db.outboundEmail.findUniqueOrThrow({ where: { id }, select: { payload: true } });
-    await db.outboundEmail.update({ where: { id }, data: { payload: scrubAuditPayload(e.payload, needles) as Prisma.InputJsonValue } });
+  // Other graduates' email payloads quoting that text (e.g. an opening title) — SHARED.
+  for (const id of await findIdsMentioning(db, `"OutboundEmail"`, `payload::text`, shared)) {
+    const e = await db.outboundEmail.findUniqueOrThrow({ where: { id }, select: { payload: true, graduateId: true } });
+    if (e.graduateId === graduateId) continue; // their own payloads were already cleared
+    await db.outboundEmail.update({ where: { id }, data: { payload: scrubAuditPayload(e.payload, shared, { redactKeys: false }) as Prisma.InputJsonValue } });
   }
 }
 

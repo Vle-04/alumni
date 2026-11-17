@@ -11,14 +11,49 @@ export const PERSONAL_FIELDS = new Set(["fullName", "preferredName", "city", "co
 const REDACTED = new Set([...CONTACT_FIELDS, ...PERSONAL_FIELDS]);
 
 /**
- * Deep-scrubs an already-stored audit payload: redacts personal keys and replaces any string
- * containing one of `needles` (e.g. a deleted person's name or email). Used on deletion.
+ * Which strings identify a person, split by where they may be scrubbed:
+ *  - `full`: full name, email, phone — scrubbed everywhere, including SHARED records
+ *  - `parts`: single name parts (and a one-word preferred name) — scrubbed ONLY in the person's own
+ *    records, because on their own they are ordinary words ("Mark", "Will").
  */
-export function scrubAuditPayload(value: unknown, needles: readonly string[]): unknown {
-  const lower = needles.filter((n) => n.trim().length >= 3).map((n) => n.toLowerCase());
+export interface Identifiers {
+  full: string[];
+  parts: string[];
+}
+
+export function identifiersFor(p: { fullName: string; preferredName?: string | null; email?: string | null; phone?: string | null }): Identifiers {
+  const clean = (xs: (string | null | undefined)[]) => [...new Set(xs.map((x) => (x ?? "").trim()).filter((x) => x.length >= 3))];
+  const parts = p.fullName.split(/[\s,.'’-]+/u);
+  return {
+    full: clean([p.fullName, p.preferredName && /\s/.test(p.preferredName) ? p.preferredName : null, p.email, p.phone]),
+    parts: clean([...parts, p.preferredName && !/\s/.test(p.preferredName) ? p.preferredName : null]),
+  };
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Replaces each needle with "[removed]" — WHOLE WORDS only, case-insensitive, Unicode-aware
+ * ("Mark" never touches "marketing" or "Marks"). Longest needles first, so a full name is removed
+ * as one unit before its parts.
+ */
+export function removeWholeWords(text: string, needles: readonly string[]): string {
+  let out = text;
+  for (const n of [...new Set(needles)].filter((x) => x.trim().length >= 3).sort((a, b) => b.length - a.length)) {
+    out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(n.trim())}(?![\\p{L}\\p{N}_])`, "giu"), "[removed]");
+  }
+  return out;
+}
+
+/**
+ * Deep-scrubs a stored JSON payload (audit diff/meta, email payload): replaces whole-word matches of
+ * `needles` inside strings — the rest of each string is kept. With `redactKeys` (only for entries
+ * ABOUT the person), personal keys such as fullName/notes are also reduced to {changed: true}.
+ */
+export function scrubAuditPayload(value: unknown, needles: readonly string[], opts: { redactKeys: boolean } = { redactKeys: true }): unknown {
   const walk = (v: unknown, key?: string): unknown => {
-    if (key && REDACTED.has(key)) return { changed: true };
-    if (typeof v === "string") return lower.some((n) => v.toLowerCase().includes(n)) ? "[removed]" : v;
+    if (opts.redactKeys && key && REDACTED.has(key)) return { changed: true };
+    if (typeof v === "string") return removeWholeWords(v, needles);
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
     return v;

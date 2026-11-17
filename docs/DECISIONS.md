@@ -404,7 +404,7 @@ Every route handler is built with `validatedRoute` (`src/lib/route.ts`), which p
 **D91. The deletion sweep also checks encrypted copies.**
 It finds every encrypted value by its ciphertext format in every text/JSON column of every schema, so new encrypted columns are covered automatically. It decrypts each value and searches the plaintext. Nothing needed fixing: the graduate's encrypted fields are cleared and one-time codes are deleted.
 
-**D92. Deletion scrubs linked free text.**
+**D92. Deletion scrubs linked free text.** *Amended by D99: whole words only; shared records get the full name, email and phone only; shared companies are never renamed.*
 - **Fields cleaned:** the graduate's name, email and phone are replaced with "[removed]" in job titles, names of companies they typed (renamed in place, so the company id is unchanged), and titles and descriptions of openings they were suggested for or referred to. The same strings are also removed from any audit-log entry or email-queue payload containing them.
 - **Untouched:** status, dates, company id and role category, so the outcomes report is identical (tested).
 - **Limit:** a company name that was changed this way changes for everyone who worked there.
@@ -430,3 +430,18 @@ Email-provider delivery logs and database backups keep a deleted graduate's data
 
 **D98. IP keys in application logs.**
 Keys named exactly `ip`, `IP`, `ipAddress`, `remoteAddress`, `x-forwarded-for`, `forwardedFor` or `x-real-ip`, or ending in `Ip`, are redacted. Exact names are used because substring matching also hid harmless fields such as `skipped`. No logger call currently passes an IP at all.
+
+**D99. Deletion scrubbing never damages other people's data.**
+- **Whole words only.** Matching is case-insensitive and Unicode-aware (`removeWholeWords`), so "Mark" never touches "marketing", "Marks" or "Mark's", and Armenian names such as "Անի" never touch "Անիտա".
+- **Two identifier sets** (`identifiersFor`):
+  - **Own** (full name, single name parts, a one-word preferred name, email, phone) applies only to the person's own records: their job titles, a company only they are linked to, and audit entries about them or by them.
+  - **Shared** (full name, email, phone only) applies to everything others also rely on: opening titles and descriptions, other people's email payloads, and audit entries about someone or something else. Single name parts are ordinary words there, so they are never scrubbed in shared records.
+  - In audit entries not about the person, only the matched words are replaced, and keys such as `fullName` (which belong to someone else) are left alone.
+- **Companies are renamed only if nobody else relies on them:** no other graduate's employment record, no openings, no partner contacts, not a partner.
+  - Otherwise the company name is left unchanged, even if it contains the person's name (e.g. "Mark Will Consulting" where another graduate also worked).
+  - This is a deliberate trade-off: renaming a shared company would change other graduates' histories and the partner's own records.
+  - The company name alone does not say which graduate it belonged to.
+- **Limit: previous names.** Shared records are scrubbed only for the name as it is at deletion. Audit entries record name changes only as "changed", so a name the person used before a rename isn't known and won't be found in shared free text.
+- **Proof:** `tests/integration/deletion-shared.test.ts` deletes "Mark Will" and checks:
+  - **Gone:** "Mark Will" and their email.
+  - **Unchanged:** "marketing", "will", another graduate's opening and profile, a shared company name, a partner contact named "Will Smith", and the keys of another person's audit entry.

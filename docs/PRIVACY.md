@@ -64,6 +64,8 @@ We do not sell your data or share it with anyone else.
 
 - **Records about you are edited.** We keep a log of who did what, so access to your data can be checked. That log is normally never changed. Deleting your account is the one exception: we go back through the log and remove your name, email address, phone number and the internet (IP) addresses of your own visits. We keep only the fact that something happened ("a graduate's record was viewed"). Otherwise the log would be a copy of the very data you asked us to delete.
 - **Text that mentions you is cleaned.** Where your name, email or phone appear in text you or staff typed (for example a job title, a company name you entered, or a job description written for you), they are replaced with "[removed]".
+  - **Text other people also use** (job descriptions, other people's records): only your full name, email and phone are removed, never single words that happen to match part of your name, so other people's information isn't damaged.
+  - **Company names:** a company name you entered is changed only if nobody else is linked to that company. If other graduates or a partner rely on it, the name stays as it is.
 - **Copies outside our database.**
   - **Email provider:** the service that delivers our emails keeps its own delivery logs (recipient address, subject, delivery time) for **[ACADEMY TO FILL IN: e.g. 30 days, per our email provider's policy]**. We cannot delete those early.
   - **Database backups:** our backups contain your data until they expire, after **[ACADEMY TO FILL IN: e.g. 35 days]**. Backups are encrypted and only restored to recover from a failure. If one is ever restored, we delete your data again before it is used.
