@@ -168,7 +168,29 @@ describe("placement board", () => {
     expect(recs[1]).toMatchObject({ supersedesId: recs[0]!.id, inField: true, verifiedById: cs.actor.id });
     const transitions = await prisma.referralTransition.findMany({ where: { referralId: ref.id }, orderBy: { at: "asc" } });
     expect(transitions.map((t) => t.toStatus)).toEqual(["suggested", "graduate_interested", "referred", "interviewing", "offer", "hired"]);
-    await expect(placement.moveReferral(cs, ref.id, "rejected")).rejects.toThrow(/final/);
+    await expect(placement.moveReferral(cs, ref.id, "rejected")).rejects.toThrow(/only be undone back to Offer/);
+  });
+
+  it("AUDIT 6: moving a referral back out of Hired removes the employment record(s) it created", async () => {
+    const g = await searchingGrad("Undo Hire", { share: true, skills: [["JS", 4]] });
+    const own = await prisma.employmentRecord.create({ data: { graduateId: g.id, status: "searching", source: "self_update", reportedAt: new Date(Date.now() - 86_400_000) } });
+    const matchId = await placement.notifyGraduate(cs, openingId, g.id);
+    await placement.respondToMatch({ actor: { type: "graduate", id: g.id } }, matchId, "interested");
+    const ref = await prisma.referral.findFirstOrThrow({ where: { graduateId: g.id } });
+    for (const s of ["referred", "interviewing", "offer", "hired"]) await placement.moveReferral(cs, ref.id, s);
+    await placement.confirmHire(cs, ref.id, { employmentStatus: "employed_part_time", inField: "yes" }); // a correction chained to it
+    expect(await prisma.employmentRecord.count({ where: { graduateId: g.id, source: "referral_hire" } })).toBe(2);
+
+    await placement.moveReferral(cs, ref.id, "offer");
+    expect(await prisma.employmentRecord.count({ where: { graduateId: g.id, source: "referral_hire" } })).toBe(0);
+    expect(await prisma.employmentRecord.findUnique({ where: { id: own.id } })).not.toBeNull(); // graduate's own report untouched
+    const grad = await prisma.graduate.findUniqueOrThrow({ where: { id: g.id } });
+    expect(grad).toMatchObject({ currentStatus: "searching", jobSearchStatus: "active" });
+    expect((await prisma.referral.findUniqueOrThrow({ where: { id: ref.id } })).hireRecordId).toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "employment.retract_hire", entityId: g.id } })).toBe(2);
+    // and it can be hired again later
+    const again = await placement.moveReferral(cs, ref.id, "hired");
+    expect(again.hireRecordId).toBeTruthy();
   });
 
   it("referral metrics: conversion per stage and hires per partner", async () => {

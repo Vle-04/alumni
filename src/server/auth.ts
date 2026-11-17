@@ -59,6 +59,8 @@ export const authConfig: NextAuthConfig = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "database", maxAge: 8 * 60 * 60, updateAge: 30 * 60 },
   trustHost: true,
+  // Secure (__Secure-/__Host-) cookies whenever the app is served over HTTPS.
+  useSecureCookies: (process.env.APP_URL ?? "").startsWith("https://"),
   providers: providers(),
   pages: { signIn: "/login", verifyRequest: "/login/check-email", error: "/login" },
   callbacks: {

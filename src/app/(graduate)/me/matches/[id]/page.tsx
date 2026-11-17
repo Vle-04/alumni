@@ -8,6 +8,8 @@ import { NotFoundError } from "@/server/errors";
 import { Alert, Badge, Button, Card } from "@/components/ui";
 import { fmtDate } from "@/lib/format";
 import { respondToMatchAction } from "../../actions";
+import { A, parseArgs } from "@/lib/action-args";
+import { z } from "zod";
 
 export const metadata: Metadata = { title: "Opening" };
 
@@ -17,8 +19,16 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
   const m = await getMatchForGraduate(ctx, id).catch((e) => (e instanceof NotFoundError ? null : Promise.reject(e)));
   if (!m) notFound();
   const o = m.opening;
-  async function interested() { "use server"; await respondToMatchAction(id, "interested"); }
-  async function notInterested() { "use server"; await respondToMatchAction(id, "not_interested"); }
+  async function interested(formData?: FormData) {
+    "use server";
+    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    await respondToMatchAction(id, "interested");
+  }
+  async function notInterested(formData?: FormData) {
+    "use server";
+    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    await respondToMatchAction(id, "not_interested");
+  }
   return (
     <div className="space-y-5">
       <p className="text-sm font-medium text-accent">{t("match.title")}</p>

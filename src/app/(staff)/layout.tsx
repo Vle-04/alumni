@@ -3,6 +3,8 @@ import { can } from "@/domain/rbac/permissions";
 import { t } from "@/i18n";
 import { signOut } from "@/server/auth";
 import { Nav, type NavItem } from "./Nav";
+import { A, parseArgs } from "@/lib/action-args";
+import { z } from "zod";
 
 export default async function StaffLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireStaffPage();
@@ -22,8 +24,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
     { href: "/admin/settings", label: t("nav.settings"), show: can(role, "settings:manage") },
   ].filter((i) => i.show);
 
-  async function doSignOut() {
+  async function doSignOut(formData?: FormData) {
     "use server";
+    parseArgs(z.tuple([A.form.optional()]), [formData]);
     await signOut({ redirectTo: "/login" });
   }
 

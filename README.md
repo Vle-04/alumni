@@ -95,20 +95,59 @@ After *Interested*, plus the graduate's `share_with_partners` consent, the refer
 
 ## Architecture
 
-```
-            ┌──────────────── Next.js (web) ────────────────┐      ┌──── worker ────┐
- Browser ──▶│ app/ (pages, server actions, route handlers)  │      │ pg-boss jobs   │
-            │        │ RequestContext (actor, ip)           │      │ survey-tick,   │
-            │        ▼                                      │      │ outbox-drain…  │
-            │                                               │      └───────┬────────┘
-            │ server/services/*  ── requirePermission() ────┼──────────────┤
-            │        │                 audit()               │              │
-            │        ▼                                      │              │
-            │ domain/*  (pure TS: matching, metrics, CSV,   │◀─────────────┘
-            │            scheduling, RBAC matrix, redaction)│
-            └────────┬──────────────────────────────────────┘
-                     ▼
-               PostgreSQL (Prisma) ── contact fields AES-256-GCM encrypted, HMAC blind index
+```mermaid
+flowchart LR
+  subgraph People
+    S[Staff browser<br/>Admin · Career Services · Leadership]
+    G[Graduate phone<br/>personal link]
+    P[Partner contact<br/>portal link]
+    M[Mail client]
+  end
+
+  subgraph Web["web — Next.js (src/app)"]
+    MW[middleware<br/>nonce CSP · CSRF origin check]
+    UI[pages + server actions<br/>parseArgs → Zod]
+    RH[route handlers<br/>/u /p /api/*]
+    AUTH[Auth.js<br/>magic link / OIDC]
+  end
+
+  subgraph Server["src/server — adapters"]
+    SVC[services/*<br/>requirePermission · audit]
+    CRY[crypto<br/>AES-256-GCM · blind index]
+    OUT[outbox<br/>idempotent email]
+    LOG[logger<br/>PII scrubbed]
+  end
+
+  subgraph Domain["src/domain — pure TypeScript"]
+    D1[matching] --- D2[metrics + suppression]
+    D3[survey scheduling] --- D4[referral pipeline]
+    D5[tokens · RBAC · CSV · redaction]
+  end
+
+  subgraph Worker["worker — pg-boss"]
+    J1[survey-tick 5 min]
+    J2[outbox-drain 1 min]
+    J3[retention daily]
+    J4[housekeeping daily]
+  end
+
+  DB[(PostgreSQL<br/>app tables + pgboss schema)]
+  EMAIL[[Email provider<br/>SMTP / Resend]]
+
+  S --> MW --> UI
+  G --> MW --> RH
+  P --> MW
+  M -->|one-click unsubscribe| RH
+  S --> AUTH
+  UI --> SVC
+  RH --> SVC
+  SVC --> Domain
+  SVC --> CRY
+  SVC --> OUT
+  SVC --> DB
+  Worker --> SVC
+  OUT --> EMAIL --> G
+  Worker --> DB
 ```
 
 - **`src/domain`**: framework-independent business logic, unit tested. Lint forbids it from importing Next.js or Prisma.

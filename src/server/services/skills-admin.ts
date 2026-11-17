@@ -39,8 +39,10 @@ export async function removeSynonym(ctx: RequestContext, synonymId: string) {
  * Turns `sourceId` into a synonym of `targetId`: graduate levels keep the higher value, opening
  * requirements keep the higher weight and must-have flag. Irreversible; audited.
  */
-export async function mergeSkillInto(ctx: RequestContext, sourceId: string, targetId: string) {
+export async function mergeSkillInto(ctx: RequestContext, rawSourceId: unknown, rawTargetId: unknown) {
   requirePermission(ctx, "skills:manage");
+  const sourceId = z.string().min(1).max(64).parse(rawSourceId);
+  const targetId = z.string().min(1).max(64).parse(rawTargetId);
   if (sourceId === targetId) throw new ValidationError("Choose a different skill.");
   await prisma.$transaction(async (tx) => {
     const [source, target] = await Promise.all([tx.skill.findUnique({ where: { id: sourceId }, include: { synonyms: true } }), tx.skill.findUnique({ where: { id: targetId } })]);

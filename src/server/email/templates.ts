@@ -12,6 +12,7 @@ export interface TemplateContext {
   link?: string;
   unsubscribeUrl?: string;
   milestone?: number;
+  catchUp?: boolean;
   code?: string;
   openingTitle?: string;
   companyName?: string;
@@ -26,6 +27,10 @@ export function renderTemplate(name: TemplateName, c: TemplateContext): { subjec
   const months = String(c.milestone ?? "");
   switch (name) {
     case "survey_initial": {
+      if (c.catchUp) {
+        const subject = t("email.catchUpSubject");
+        return { subject, ...renderEmail({ title: t("email.surveyTitle", { name: c.firstName }), paragraphs: [t("email.catchUpBody"), t("email.surveyPrivacy")], cta: { label: t("email.surveyCta"), url: c.link! }, footer }) };
+      }
       const subject = t("email.surveySubject", { months });
       return { subject, ...renderEmail({ title: t("email.surveyTitle", { name: c.firstName }), paragraphs: [t("email.surveyBody", { months }), t("email.surveyPrivacy")], cta: { label: t("email.surveyCta"), url: c.link! }, footer }) };
     }

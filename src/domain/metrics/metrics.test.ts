@@ -159,6 +159,13 @@ describe("buildOutcomesReport", () => {
     expect(buildOutcomesReport(grads.slice(0, 3), cohorts, companies, NOW).tooSmall).toBe(true);
   });
 
+  it("AUDIT 7: the suppression threshold can never go below 5, even if a lower value is passed", () => {
+    const low = buildOutcomesReport(grads, cohorts, companies, NOW, { ...DEFAULT_REPORT_CONFIG, minCell: 2 });
+    expect(low.config.minCell).toBe(5);
+    expect(low.population.excludedSmallCohorts.display).toBe("<5"); // the 3-person cohort is still excluded
+    expect(JSON.stringify(low)).not.toContain("Tiny");
+  });
+
   it("contains no graduate identifiers", () => {
     expect(JSON.stringify(r)).not.toMatch(/"g\d+"/);
   });

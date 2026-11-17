@@ -23,8 +23,9 @@ import * as reports from "@/server/services/reports";
 import * as dashboard from "@/server/services/dashboard";
 import * as privacy from "@/server/services/privacy";
 import * as settingsAdmin from "@/server/services/settings-admin";
+import * as graduation from "@/server/services/graduation";
 
-const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin, reports, dashboard, privacy, settingsAdmin };
+const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin, reports, dashboard, privacy, settingsAdmin, graduation };
 
 /** Functions Leadership MAY call: they return aggregates only. */
 export const AGGREGATE_ONLY = new Set([
@@ -52,6 +53,8 @@ export const INTERNAL = new Set([
   "partner.partnerLink",
   "partner.partnerSessionValue",
   "partner.resolvePartner",
+  "partner.partnerCookieOptions", // pure cookie settings, returns no data
+  "graduation.applyGraduationDefaults", // system job (survey tick / scheduling hooks)
   // Called only by permission-checked wrappers or the retention job.
   "privacy.anonymizeGraduate",
   "privacy.buildDataExport",

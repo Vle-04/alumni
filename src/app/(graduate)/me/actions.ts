@@ -1,4 +1,6 @@
 "use server";
+import { A, parseArgs } from "@/lib/action-args";
+import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { CONSENT_PURPOSES } from "@/domain/enums";
@@ -18,24 +20,28 @@ const fix = <T,>(r: ActionResult<T>): ActionResult<T> => (!r.ok && r.error === "
 const SURVEY_OPTS = { arrays: ["blockers", "helpWanted"] };
 
 export async function submitSurveyAction(surveyId: string, _p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.id, A.prev, A.form]), [surveyId, _p, fd]);
   const r = fix(await runAction(async () => { await self.submitSurvey(await ctx(), surveyId, formToObject(fd, SURVEY_OPTS)); return null; }));
   if (r.ok) redirect("/me/thanks");
   return r;
 }
 
 export async function submitSelfUpdateAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const r = fix(await runAction(async () => { await self.submitSelfUpdate(await ctx(), formToObject(fd, SURVEY_OPTS)); return null; }));
   if (r.ok) redirect("/me/thanks");
   return r;
 }
 
 export async function updatePreferencesAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const r = fix(await runAction(async () => { await self.updatePreferences(await ctx(), formToObject(fd, { arrays: ["preferredRoleCategories"], booleans: ["openToRelocate"], json: ["skills"] })); return null; }, "Preferences saved."));
   revalidatePath("/me");
   return r;
 }
 
 export async function updateConsentsAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const granted = Object.fromEntries(CONSENT_PURPOSES.map((p) => [p, fd.get(p) === "on"]));
   const r = fix(await runAction(async () => { await self.updateConsents(await ctx(), granted); return null; }, "Your privacy choices are saved."));
   revalidatePath("/me");
@@ -43,26 +49,31 @@ export async function updateConsentsAction(_p: ActionResult<null>, fd: FormData)
 }
 
 export async function setSubscriptionAction(subscribed: boolean) {
+  parseArgs(z.tuple([z.boolean(), A.form.optional()]), [subscribed]);
   await runAction(async () => self.setEmailSubscription(await ctx(), subscribed === true));
   revalidatePath("/me");
 }
 
-export async function requestEmailCodeAction(): Promise<ActionResult<null>> {
+export async function requestEmailCodeAction(formData?: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([]), [formData]);
   return fix(await runAction(async () => { await self.requestOtp(await ctx(), "change_email"); return null; }));
 }
 
 export async function changeEmailAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const r = fix(await runAction(async () => { await self.changeEmail(await ctx(), formToObject(fd)); return null; }, "Your email is updated."));
   revalidatePath("/me");
   return r;
 }
 
 export async function requestNewLinkAction(_p: { status?: string }, fd: FormData): Promise<{ status: "sent" | "rate_limited" }> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const r = await self.requestNewLink(String(fd.get("email") ?? ""), await clientIp());
   return { status: r === "ok" ? "sent" : "rate_limited" };
 }
 
 export async function respondToMatchAction(matchId: string, response: "interested" | "not_interested") {
+  parseArgs(z.tuple([A.id, z.enum(["interested", "not_interested"])]), [matchId, response]);
   const { respondToMatch } = await import("@/server/services/placement");
   const r = fix(await runAction(async () => { await respondToMatch(await ctx(), matchId, response); return null; }));
   revalidatePath(`/me/matches/${matchId}`);
@@ -70,16 +81,19 @@ export async function respondToMatchAction(matchId: string, response: "intereste
 }
 
 export async function requestPrivacyCodeAction(purpose: "export_data" | "delete_account"): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([z.enum(["export_data", "delete_account"])]), [purpose]);
   const p = purpose === "delete_account" ? "delete_account" : "export_data";
   return fix(await runAction(async () => { await self.requestOtp(await ctx(), p); return null; }));
 }
 
 export async function exportMyDataAction(_p: ActionResult<string>, fd: FormData): Promise<ActionResult<string>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const { exportMyData } = await import("@/server/services/privacy");
   return fix(await runAction(async () => JSON.stringify(await exportMyData(await ctx(), String(fd.get("code") ?? "")), null, 2)));
 }
 
 export async function deleteMyAccountAction(_p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
   const { deleteMyAccount } = await import("@/server/services/privacy");
   const { cookies } = await import("next/headers");
   const r = fix(await runAction(async () => { await deleteMyAccount(await ctx(), String(fd.get("code") ?? "")); return null; }));

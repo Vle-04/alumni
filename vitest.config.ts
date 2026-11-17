@@ -9,13 +9,15 @@ export default defineConfig({
       {
         resolve: { alias },
         esbuild: { jsx: "automatic" },
-        test: { name: "unit", include: ["src/**/*.test.ts"], environment: "node" },
+        test: { name: "unit", include: ["src/**/*.test.ts", "tests/static/**/*.test.ts"], environment: "node" },
       },
       {
         resolve: { alias },
         esbuild: { jsx: "automatic" },
         test: {
           name: "integration",
+          // next-auth imports "next/server" without an extension; let Vite resolve it.
+          server: { deps: { inline: ["next-auth"] } },
           include: ["tests/integration/**/*.test.ts"],
           environment: "node",
           setupFiles: ["tests/integration/setup.ts"],

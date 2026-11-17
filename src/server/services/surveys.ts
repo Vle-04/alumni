@@ -16,19 +16,19 @@ export async function scheduleSurveysForGraduates(db: Db, graduateIds: readonly 
   const cfg = await getSetting("surveys", db);
   const grads = await db.graduate.findMany({
     where: { id: { in: [...graduateIds] } },
-    select: { id: true, anonymizedAt: true, graduationDateOverride: true, cohort: { select: { graduationDate: true } }, surveys: { select: { id: true, milestone: true, status: true, scheduledFor: true } } },
+    select: { id: true, anonymizedAt: true, graduationDateOverride: true, cohort: { select: { graduationDate: true } }, surveys: { select: { id: true, milestone: true, status: true, scheduledFor: true, catchUp: true } } },
   });
   let created = 0;
   let updated = 0;
   for (const g of grads) {
     const gradDate = g.anonymizedAt ? null : g.graduationDateOverride ?? g.cohort.graduationDate;
     const plan = planSurveys(gradDate, g.surveys.map((s) => ({ ...s, status: s.status as SurveyStatus })), now, cfg);
-    const creates = plan.flatMap((a) => (a.type === "create" ? [{ graduateId: g.id, milestone: a.milestone, scheduledFor: a.scheduledFor, status: a.status }] : []));
+    const creates = plan.flatMap((a) => (a.type === "create" ? [{ graduateId: g.id, milestone: a.milestone, scheduledFor: a.scheduledFor, status: a.status, catchUp: a.catchUp ?? false }] : []));
     if (creates.length) created += (await db.surveyInstance.createMany({ data: creates, skipDuplicates: true })).count;
     for (const a of plan) {
       if (a.type !== "update") continue;
       // Only touch rows that are still unsent at write time (guards against a concurrent send).
-      const r = await db.surveyInstance.updateMany({ where: { id: a.id, status: { in: ["scheduled", "missed", "cancelled"] } }, data: { scheduledFor: a.scheduledFor, status: a.status } });
+      const r = await db.surveyInstance.updateMany({ where: { id: a.id, status: { in: ["scheduled", "missed", "cancelled"] } }, data: { scheduledFor: a.scheduledFor, status: a.status, ...(a.catchUp ? { catchUp: true } : {}) } });
       updated += r.count;
     }
   }
@@ -45,6 +45,8 @@ export async function scheduleSurveysForCohort(db: Db, cohortId: string, now = n
  * Safe to run concurrently and repeatedly (idempotency keys + conditional updates).
  */
 export async function runSurveyTick(now = new Date()) {
+  const { applyGraduationDefaults } = await import("./graduation");
+  await applyGraduationDefaults(now);
   const cfg = await getSetting("surveys");
   const ctx = systemContext("survey-tick");
   const stats = { queued: 0, skipped: 0, cancelled: 0, reminders: 0 };
@@ -68,7 +70,7 @@ export async function runSurveyTick(now = new Date()) {
     await prisma.$transaction(async (tx) => {
       const r = await tx.surveyInstance.updateMany({ where: { id: s.id, status: "scheduled" }, data: { status: "queued" } });
       if (r.count === 0) return; // another worker got it
-      await enqueueEmail(tx, { idempotencyKey: `survey:${s.id}:initial`, graduateId: s.graduateId, kind: "survey_initial", payload: { surveyId: s.id, milestone: s.milestone }, sendAfter: now });
+      await enqueueEmail(tx, { idempotencyKey: `survey:${s.id}:initial`, graduateId: s.graduateId, kind: "survey_initial", payload: { surveyId: s.id, milestone: s.milestone, ...(s.catchUp ? { catchUp: true } : {}) }, sendAfter: now });
       stats.queued++;
     });
   }

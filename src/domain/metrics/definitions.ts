@@ -19,6 +19,8 @@ export const METRIC_DEFINITIONS = {
   roles: "Role categories of graduates who are currently employed.",
   salaryBands: "Monthly salary bands reported by currently employed graduates. Exact salaries are never collected.",
   freshness: "Share of graduates whose record was updated in the last 90 days.",
+  surveyResponseRate:
+    "(Completed + skipped because the graduate self-updated in the last 14 days) ÷ surveys that went out (sent, completed, bounced or skipped). A skipped survey counts as a response because the graduate gave us a current status. Scheduled, missed and cancelled surveys are not counted.",
   suppression:
     "To protect privacy, any group of fewer than 5 people is shown as “<5”, a second number is hidden where needed so the first can't be worked out by subtraction, and cohorts with fewer than 5 reportable graduates are left out of every figure.",
 } as const;

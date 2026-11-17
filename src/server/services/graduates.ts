@@ -203,10 +203,27 @@ export async function updateGraduate(ctx: RequestContext, id: string, raw: unkno
     const contactAfter = { email: input.email, phone: input.phone ?? null, linkedinUrl: input.linkedinUrl ?? null };
     const strip = ({ emailEnc: _a, phoneEnc: _b, linkedinUrlEnc: _c, emailHash: _d, ...rest }: typeof before) => rest;
     await audit(tx, ctx, { action: "graduate.update", entityType: "Graduate", entityId: id, before: { ...strip(before), ...contactBefore }, after: { ...strip(after), ...contactAfter } });
+    if (contactBefore.email !== input.email) await onStaffEmailChange(tx, ctx, id);
     return before.cohortId !== after.cohortId || before.graduationDateOverride?.getTime() !== after.graduationDateOverride?.getTime();
   });
   if (result) await onGraduateScheduleInputsChanged(ctx, id);
   return id;
+}
+
+/**
+ * Staff changed the email (typically because the old address bounced). Distinctly audited;
+ * links sent to the OLD address are revoked (the old inbox may belong to someone else now);
+ * bounced/failed check-ins are re-sent to the new address.
+ */
+async function onStaffEmailChange(tx: Prisma.TransactionClient, ctx: RequestContext, id: string) {
+  await tx.graduate.update({ where: { id }, data: { profileTokenVersion: { increment: 1 } } });
+  const failed = await tx.outboundEmail.findMany({ where: { graduateId: id, kind: { in: ["survey_initial", "survey_reminder"] }, state: { in: ["dead", "uncertain", "failed"] } }, select: { id: true, payload: true } });
+  for (const e of failed) {
+    await tx.outboundEmail.update({ where: { id: e.id }, data: { state: "pending", attempts: 0, sendAfter: new Date(), lastError: null } });
+    const surveyId = (e.payload as { surveyId?: string }).surveyId;
+    if (surveyId) await tx.surveyInstance.updateMany({ where: { id: surveyId, status: { in: ["bounced", "cancelled"] } }, data: { status: "queued" } });
+  }
+  await audit(tx, ctx, { action: "graduate.email_changed_by_staff", entityType: "Graduate", entityId: id, meta: { linksRevoked: true, emailsRequeued: failed.length } });
 }
 
 /** Revokes every personal link previously sent to this graduate. */

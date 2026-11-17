@@ -35,10 +35,14 @@ describe("referral transitions", () => {
     expect(checkTransition("suggested", "referred", staff).ok).toBe(false);
   });
 
-  it("hired only from offer, and is final", () => {
+  it("hired only from offer; a hire can only be undone back to offer", () => {
     expect(checkTransition("interviewing", "hired", staff).ok).toBe(false);
     expect(checkTransition("offer", "hired", staff).ok).toBe(true);
     expect(checkTransition("hired", "rejected", staff).ok).toBe(false);
+    expect(checkTransition("hired", "offer", staff).ok).toBe(true);
+    expect(checkTransition("hired", "offer", { ...staff, shareConsent: false }).ok).toBe(true); // undo never blocked by consent
+    expect(checkTransition("hired", "offer", { ...staff, actor: "graduate" }).ok).toBe(false);
+    expect(allowedTargets("hired", staff)).toEqual(["offer"]);
   });
 
   it("reopens closed referrals to their previous stage or earlier", () => {

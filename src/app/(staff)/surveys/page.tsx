@@ -4,6 +4,7 @@ import { listDeadLetters, surveyResponseStats } from "@/server/services/surveys"
 import { can } from "@/domain/rbac/permissions";
 import { Badge, Button, Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui";
 import { fmtDateTime } from "@/lib/format";
+import { METRIC_DEFINITIONS } from "@/domain/metrics/definitions";
 import { dismissAction, retryAction } from "./actions";
 
 export const metadata = { title: "Surveys" };
@@ -16,10 +17,7 @@ export default async function SurveysPage() {
   return (
     <>
       <PageHeader title="Check-in surveys" description="Surveys go out automatically at 1, 3, 6 and 12 months after graduation, with up to two reminders." />
-      <p className="mb-4 text-sm text-muted">
-        <strong>Response rate</strong> = (completed + skipped because the graduate self-updated in the last 14 days) ÷ surveys that went out (sent, completed, bounced or skipped).
-        Scheduled, missed and cancelled surveys are not counted.
-      </p>
+      <p className="mb-4 text-sm text-muted"><strong>Response rate</strong> — {METRIC_DEFINITIONS.surveyResponseRate}</p>
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <Card title={`By milestone · overall ${pct(stats.totals.rate)}`}>
           <Table caption="Response rate by milestone">

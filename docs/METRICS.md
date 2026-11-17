@@ -15,6 +15,32 @@ Defaults are listed in the [Settings defaults](#settings-defaults) table. Admins
 | **Small cohorts** | A cohort with fewer than *k* = 5 reportable graduates is left out of **every** figure, totals included. Only the number of graduates excluded this way is shown (itself suppressed if small). See [Filters](#filters) for why. |
 | **Graduation date** | Taken from the cohort, or from the graduate's own override date if staff set one. |
 
+## Presumed status at graduation
+
+New graduates who haven't told us anything (and haven't said they're "not looking") are presumed to be **searching** from their graduation date. That makes them visible to matching and to the "searching for a long time" queue.
+
+The presumption is stored as a record with source `graduation_default` and is **excluded from every outcome metric**:
+- such a graduate still counts as **unknown**
+- they never raise the response rate
+- they never count as "not employed"
+
+Their first real answer replaces it.
+
+## Survey response rate
+
+This is the response rate shown on the Surveys page, per milestone and per cohort. It is separate from the "response rate" next to the employment rate, which is defined under [Employment rate](#employment-rate).
+
+```
+survey response rate = (completed + skipped_recent_update)
+                       ÷ (sent + completed + bounced + skipped_recent_update)
+```
+
+- **Surveys skipped after a recent self-update count as responses.** If a graduate updated their status themselves within the skip window (default 14 days) before a milestone survey was due, that survey is not sent and is recorded as `skipped_recent_update`. It counts as answered, in both the numerator and the denominator, because the graduate did give us a current status.
+- **Not counted at all:** surveys still scheduled or queued, milestones `missed` because they had passed before scheduling, and `cancelled` surveys (unsubscribed or deleted graduates).
+- **Bounced** surveys count in the denominator, as surveys that went out but couldn't be answered.
+- **Catch-up surveys** count under the milestone they replaced. A graduate whose milestones had all passed before scheduling (for example, an imported historical cohort) gets one "where are you now?" catch-up survey.
+- **Catch-up answers and milestone figures:** the answer is dated when it was given, so it only counts towards a 6- or 12-month figure if it falls inside that milestone's window.
+
 ## Status at a milestone (6 and 12 months)
 
 The milestone date is the graduation date plus N calendar months. A graduate's **status at the milestone** is found like this:

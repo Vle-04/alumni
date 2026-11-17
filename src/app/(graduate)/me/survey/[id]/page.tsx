@@ -19,7 +19,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
   if (!survey) notFound();
   return (
     <>
-      <h1 className="text-2xl font-semibold">{t("grad.surveyTitle", { months: survey.milestone })}</h1>
+      <h1 className="text-2xl font-semibold">{survey.catchUp ? t("grad.catchUpTitle") : t("grad.surveyTitle", { months: survey.milestone })}</h1>
       <p className="mt-1 mb-5 text-muted">{t("grad.intro")}</p>
       {!survey.open && <div className="mb-4"><Alert>{t("grad.surveyClosed")}</Alert></div>}
       <SurveyForm action={survey.open ? submitSurveyAction.bind(null, survey.id) : submitSelfUpdateAction} prompt={confirmPrompt(survey.last)} last={survey.last} />

@@ -70,3 +70,44 @@ describe("graduate records", () => {
     expect(await svc.rotateProfileLink(cs, id)).toBe(2);
   });
 });
+
+describe("AUDIT 12: staff change an unreachable email", () => {
+  beforeEach(resetDb);
+  it("is audit-logged distinctly, revokes old links, and re-sends the bounced check-in to the new address", async () => {
+    const { setEmailAdapter } = await import("@/server/email/adapters");
+    const { PermanentEmailError } = await import("@/server/email/types");
+    const { FakeEmailAdapter } = await import("./fake-email");
+    const { enqueueEmail, processOutbox } = await import("@/server/outbox");
+    const { createGraduateToken, resolveGraduateToken } = await import("@/server/tokens");
+    const fake = new FakeEmailAdapter();
+    setEmailAdapter(fake);
+    const cs = await staff("CAREER_SERVICES");
+    const cohortId = (await makeCohort({ graduationDate: null })).id;
+    const id = await svc.createGraduate(cs, { fullName: "Bounce Person", email: "old@example.test", cohortId });
+    const survey = await prisma.surveyInstance.create({ data: { graduateId: id, milestone: 3, scheduledFor: new Date(), status: "queued" } });
+    await enqueueEmail(prisma, { idempotencyKey: `survey:${survey.id}:initial`, graduateId: id, kind: "survey_initial", payload: { surveyId: survey.id, milestone: 3 } });
+    const noon = (() => { const t = new Date(); return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + 1, 12)); })();
+    fake.failures.push(new PermanentEmailError("550 no such user"));
+    await processOutbox({ now: noon });
+    expect((await prisma.surveyInstance.findUniqueOrThrow({ where: { id: survey.id } })).status).toBe("bounced");
+    const oldLink = createGraduateToken((await prisma.graduate.findUniqueOrThrow({ where: { id } })), "profile");
+
+    await svc.updateGraduate(cs, id, { fullName: "Bounce Person", email: "new@example.test", cohortId });
+
+    expect(await prisma.auditLog.count({ where: { action: "graduate.email_changed_by_staff", entityId: id, actorId: cs.actor.id } })).toBe(1);
+    expect(JSON.stringify(await prisma.auditLog.findMany({ where: { entityId: id } }))).not.toMatch(/old@example|new@example/);
+    expect(await resolveGraduateToken(oldLink, ["profile"])).toEqual({ ok: false, reason: "revoked" });
+    await processOutbox({ now: noon });
+    expect(fake.sent.at(-1)!.to).toBe("new@example.test");
+    expect((await prisma.surveyInstance.findUniqueOrThrow({ where: { id: survey.id } })).status).toBe("sent");
+    setEmailAdapter(undefined);
+  });
+
+  it("is not triggered by edits that keep the same email", async () => {
+    const cs = await staff("CAREER_SERVICES");
+    const cohortId = (await makeCohort()).id;
+    const id = await svc.createGraduate(cs, { fullName: "Same Email", email: "same@example.test", cohortId });
+    await svc.updateGraduate(cs, id, { fullName: "Same Email Renamed", email: "SAME@example.test", cohortId });
+    expect(await prisma.auditLog.count({ where: { action: "graduate.email_changed_by_staff" } })).toBe(0);
+  });
+});

@@ -7,7 +7,8 @@
  *  - Only the GRADUATE can move a referral to graduate_interested (by clicking Interested).
  *  - Moving to referred or beyond shares the graduate's details with the partner, so it requires
  *    the Interested click AND active share_with_partners consent (see canShareWithPartner).
- *  - hired only from offer; hired is final. Staff may step back one stage to fix mistakes,
+ *  - hired only from offer. Hired can only step back to offer (undo a mistaken hire — this removes
+ *    the employment record the hire created). Staff may step back one stage to fix mistakes,
  *    and may reopen a rejected/withdrawn referral to the stage it was in.
  */
 import type { ReferralStatus } from "../enums";
@@ -32,7 +33,10 @@ export function canShareWithPartner(interested: boolean, shareConsent: boolean):
 
 export function checkTransition(from: ReferralStatus, to: ReferralStatus, ctx: TransitionContext): TransitionCheck {
   if (from === to) return { ok: false, reason: "The referral is already in this stage." };
-  if (from === "hired") return { ok: false, reason: "Hired is final. Record a new employment change on the graduate instead." };
+  if (from === "hired") {
+    // Undo is always possible (even if consent changed since) because it only REMOVES data.
+    return to === "offer" && ctx.actor === "staff" ? { ok: true } : { ok: false, reason: "A hire can only be undone back to Offer." };
+  }
   if (to === "graduate_interested" && ctx.actor !== "graduate") return { ok: false, reason: "Only the graduate can say they're interested (from their personal link)." };
   if (ctx.actor === "graduate" && !(to === "graduate_interested" || to === "withdrawn")) return { ok: false, reason: "Graduates can only say Interested or Not interested." };
   if (SHARES_WITH_PARTNER.includes(to) && !canShareWithPartner(ctx.interested, ctx.shareConsent)) {

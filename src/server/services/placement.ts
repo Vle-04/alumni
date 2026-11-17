@@ -15,7 +15,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from ".
 import { enqueueEmail } from "../outbox";
 import { getSetting } from "../settings";
 import { hasConsent } from "./consent";
-import { appendEmploymentRecord, employmentInputSchema } from "./employment";
+import { appendEmploymentRecord, employmentInputSchema, refreshCurrentStatus } from "./employment";
 
 // ─── Adapters: database rows → matching inputs (allowlisted fields only) ───
 
@@ -210,6 +210,12 @@ export async function moveReferral(ctx: RequestContext, referralId: string, rawT
     if (!check.ok) throw new ValidationError(check.reason);
     await applyTransition(tx, ctx, referralId, ref.status, to, note?.slice(0, 500));
 
+    if (ref.status === "hired" && to === "offer") {
+      await retractHireRecords(tx, ctx, ref.graduateId, ref.hireRecordId);
+      await tx.referral.update({ where: { id: referralId }, data: { hireRecordId: null } });
+      await tx.graduate.update({ where: { id: ref.graduateId }, data: { jobSearchStatus: "active" } });
+    }
+
     let hireRecordId: string | null = null;
     if (to === "hired") {
       // Acceptance: a hire produces an employment record (prefilled; staff confirm or correct it).
@@ -223,6 +229,28 @@ export async function moveReferral(ctx: RequestContext, referralId: string, rawT
     }
     return { hireRecordId };
   });
+}
+
+/**
+ * Undoing a hire removes the employment record(s) the hire produced: the prefilled record and any
+ * staff correction chained to it via supersedesId (all with source referral_hire). Records the
+ * graduate reported themselves are never touched. The removal is audited with a snapshot.
+ */
+async function retractHireRecords(tx: Db, ctx: RequestContext, graduateId: string, latestId: string | null) {
+  const ids: string[] = [];
+  for (let id = latestId; id; ) {
+    const r = await tx.employmentRecord.findUnique({ where: { id }, select: { id: true, source: true, supersedesId: true, graduateId: true, status: true, companyId: true, roleTitle: true, startDate: true } });
+    if (!r || r.source !== "referral_hire" || r.graduateId !== graduateId) break;
+    ids.push(r.id);
+    await audit(tx, ctx, { action: "employment.retract_hire", entityType: "Graduate", entityId: graduateId, meta: { recordId: r.id, status: r.status, companyId: r.companyId, roleTitle: r.roleTitle, startDate: r.startDate } });
+    id = r.supersedesId;
+  }
+  // Newest first, so nothing still points at a deleted row.
+  for (const id of ids) {
+    await tx.employmentRecord.updateMany({ where: { supersedesId: id }, data: { supersedesId: null } });
+    await tx.employmentRecord.delete({ where: { id } });
+  }
+  await refreshCurrentStatus(tx, graduateId);
 }
 
 export const confirmHireSchema = z.object({

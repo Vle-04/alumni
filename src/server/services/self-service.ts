@@ -15,6 +15,7 @@ import { blindIndex, decryptOpt, encrypt, hashSecret, maskEmail, safeEqualHex } 
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "../errors";
 import { deliverNow, enqueueEmail, otpPayload } from "../outbox";
 import { checkRateLimit } from "../rate-limit";
+import { isLockedOut, recordFailure, retryAfterSeconds } from "../lockout";
 import { activeConsents, setConsent } from "./consent";
 import { appendEmploymentRecord, employmentInputSchema, type RecordSource } from "./employment";
 import { setGraduateSkills } from "./skills";
@@ -64,7 +65,7 @@ export async function getSurveyForGraduate(ctx: RequestContext, surveyId: string
   const s = await prisma.surveyInstance.findUnique({ where: { id: surveyId } });
   if (!s || s.graduateId !== ctx.actor.id) throw new NotFoundError("Check-in");
   if (!s.openedAt) await prisma.surveyInstance.update({ where: { id: s.id }, data: { openedAt: new Date() } });
-  return { id: s.id, milestone: s.milestone, open: s.status === "sent" || s.status === "queued" || s.status === "bounced", last: await lastKnown(prisma, ctx.actor.id) };
+  return { id: s.id, milestone: s.milestone, catchUp: s.catchUp, open: s.status === "sent" || s.status === "queued" || s.status === "bounced", last: await lastKnown(prisma, ctx.actor.id) };
 }
 
 async function recordAnswers(db: Db, ctx: GradCtx, raw: unknown, source: RecordSource, surveyInstanceId?: string) {
@@ -182,12 +183,21 @@ export async function requestOtp(ctx: RequestContext, rawPurpose: OtpPurpose) {
 }
 
 /** Verifies and consumes a code. Throws ValidationError with a generic message on any failure. */
-export async function consumeOtp(db: Db, graduateId: string, purpose: OtpPurpose, code: string) {
+export async function consumeOtp(db: Db, graduateId: string, purpose: OtpPurpose, rawCode: unknown) {
   const fail = () => new ValidationError("That code is wrong or has expired. Request a new one.", { code: ["That code is wrong or has expired."] });
+  // Lockout across ALL codes and purposes: 10 wrong codes per hour stops guessing entirely.
+  if (await isLockedOut("otp", graduateId)) throw new RateLimitError(retryAfterSeconds("otp"));
+  const code = z.string().trim().max(12).catch("").parse(rawCode);
   const otp = await db.oneTimeCode.findFirst({ where: { graduateId, purpose, consumedAt: null }, orderBy: { createdAt: "desc" } });
-  if (!otp || otp.expiresAt < new Date() || otp.attempts >= OTP_MAX_ATTEMPTS) throw fail();
+  if (!otp || otp.expiresAt < new Date() || otp.attempts >= OTP_MAX_ATTEMPTS) {
+    await recordFailure("otp", graduateId);
+    throw fail();
+  }
   await db.oneTimeCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
-  if (!/^\d{6}$/.test(code.trim()) || !safeEqualHex(hashSecret(code.trim()), otp.codeHash)) throw fail();
+  if (!/^\d{6}$/.test(code) || !safeEqualHex(hashSecret(code), otp.codeHash)) {
+    await recordFailure("otp", graduateId);
+    throw fail();
+  }
   const consumed = await db.oneTimeCode.updateMany({ where: { id: otp.id, consumedAt: null }, data: { consumedAt: new Date() } });
   if (!consumed.count) throw fail();
 }

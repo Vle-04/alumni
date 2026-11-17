@@ -14,16 +14,20 @@ import { z } from "zod";
 import { prisma, type Db } from "../db";
 import { audit } from "../audit";
 import { requirePermission, type RequestContext } from "../context";
-import { decryptOpt } from "../crypto";
+import { blindIndex, decryptOpt } from "../crypto";
+import { scrubAuditPayload } from "@/domain/audit/redact";
+import type { Prisma } from "@prisma/client";
 import { ForbiddenError, NotFoundError } from "../errors";
 import { getSetting } from "../settings";
 import { consumeOtp } from "./self-service";
 import { addMonthsUtc } from "@/domain/records/staleness";
 
 export async function anonymizeGraduate(db: Db, ctx: RequestContext, graduateId: string, reason: "self_request" | "staff_request" | "retention") {
-  const g = await db.graduate.findUnique({ where: { id: graduateId }, select: { id: true, anonymizedAt: true } });
+  const g = await db.graduate.findUnique({ where: { id: graduateId }, select: { id: true, anonymizedAt: true, fullName: true, preferredName: true, emailEnc: true, phoneEnc: true } });
   if (!g) throw new NotFoundError("Graduate");
   if (g.anonymizedAt) return;
+  const email = decryptOpt(g.emailEnc);
+  const needles = [g.fullName, ...g.fullName.split(/\s+/).filter((p) => p.length >= 4), g.preferredName ?? "", email ?? "", decryptOpt(g.phoneEnc) ?? ""].filter(Boolean);
   const label = `Deleted graduate #${createHash("sha256").update(g.id).digest("hex").slice(0, 8)}`;
   await db.graduate.update({
     where: { id: graduateId },
@@ -42,7 +46,29 @@ export async function anonymizeGraduate(db: Db, ctx: RequestContext, graduateId:
   await db.outboundEmail.updateMany({ where: { graduateId }, data: { payload: {}, lastError: null } });
   await db.referral.updateMany({ where: { graduateId }, data: { notes: null } });
   await db.referralTransition.updateMany({ where: { referral: { graduateId } }, data: { note: null } });
-  await audit(db, ctx, { action: "graduate.anonymize", entityType: "Graduate", entityId: graduateId, meta: { reason } });
+
+  // Audit log: scrub stored diffs/meta about this person, and drop IPs/user agents of their own actions.
+  const rows = await db.auditLog.findMany({
+    where: { OR: [{ entityId: graduateId }, { actorType: "graduate", actorId: graduateId }] },
+    select: { id: true, diff: true, actorType: true, actorId: true, ip: true },
+  });
+  const ownIps = new Set<string>();
+  for (const r of rows) {
+    const own = r.actorType === "graduate" && r.actorId === graduateId;
+    if (own && r.ip) ownIps.add(r.ip);
+    await db.auditLog.update({
+      where: { id: r.id },
+      data: { diff: r.diff === null ? undefined : (scrubAuditPayload(r.diff, needles) as Prisma.InputJsonValue), ...(own ? { ip: null, userAgent: null } : {}) },
+    });
+  }
+  if (ctx.actor.type === "graduate" && ctx.ip) ownIps.add(ctx.ip);
+  // Rate-limit keys may contain a keyed hash of the email (new-link requests) or the person's IPs.
+  // Removing a counter only resets a limit, so this is always safe.
+  if (email) await db.rateLimitBucket.deleteMany({ where: { key: { contains: blindIndex(email).slice(0, 24) } } });
+  for (const ip of ownIps) await db.rateLimitBucket.deleteMany({ where: { key: { contains: ip } } });
+  // The deletion's own audit entry must not re-introduce the person's IP / device.
+  const auditCtx = ctx.actor.type === "graduate" ? { actor: ctx.actor } : ctx;
+  await audit(db, auditCtx, { action: "graduate.anonymize", entityType: "Graduate", entityId: graduateId, meta: { reason } });
 }
 
 /** Everything we hold about the graduate, in plain JSON. */

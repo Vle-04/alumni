@@ -1,4 +1,6 @@
 "use server";
+import { A, parseArgs } from "@/lib/action-args";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { runAction, type ActionResult } from "@/lib/action";
 import { staffActionContext } from "@/server/session";
@@ -24,6 +26,7 @@ function parse(key: SettingKey, fd: FormData): unknown {
 }
 
 export async function saveSettingsAction(key: SettingKey, _p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
+  parseArgs(z.tuple([z.enum(["surveys", "matching", "reporting", "retention"]), A.prev, A.form]), [key, _p, fd]);
   const r = await runAction(async () => {
     const ctx = await staffActionContext("settings:manage");
     await updateSettings(ctx, key, parse(key, fd));

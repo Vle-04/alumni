@@ -124,7 +124,7 @@ Each graduate has exactly one survey row per milestone (1/3/6/12 months), enforc
 - Removing the date cancels unsent surveys; setting it again brings them back.
 
 **D30. Old milestones are "missed", never sent.**
-A milestone more than 14 days (configurable) in the past at scheduling time is marked `missed`. Graduates imported from old cohorts don't receive a "1-month" survey years later.
+A milestone more than 14 days (configurable) in the past at scheduling time is marked `missed`. Graduates imported from old cohorts don't receive a "1-month" survey years later. *Amended by D82:* the most recent missed milestone becomes one catch-up survey.
 
 **D31. The skip rule is checked when the survey is due.**
 If the graduate self-updated within the skip window (14 days, configurable), the survey becomes `skipped_recent_update` and counts as a response.
@@ -193,7 +193,7 @@ It uses CSS `:has()`. Browsers without `:has()` show every question, and the ser
 - A graduate with no role preference gets half role credit (0.5), so having no preference is neither rewarded nor punished.
 - A remote role counts as compatible for everyone; on-site-only people get a slightly lower location fit (0.7).
 - On-site and hybrid roles need the same city, or the graduate must be open to relocating (fit 0.5).
-- Graduates whose status is "unknown" are **not** matched until they tell us they're searching. That's privacy-protective: the brief requires a status of searching or an opt-in.
+- Graduates whose status is "unknown" are **not** matched until they tell us they're searching. That's privacy-protective: the brief requires a status of searching or an opt-in. *Amended by D84:* new graduates are presumed searching at graduation.
 
 **D46. Matching reads only a fixed list of fields.**
 The list is `MATCH_CANDIDATE_FIELDS`, and a unit test fails if it ever includes anything that looks like a protected attribute. The database adapter builds candidates only from those fields.
@@ -208,7 +208,7 @@ The list is `MATCH_CANDIDATE_FIELDS`, and a unit test fails if it ever includes 
 Partners only see referrals that actually reached `referred`; earlier stages stay internal. When the gate allows it, they see name, email, LinkedIn URL (as text), skills and preferred roles. They never see phone, salary or status history.
 
 **D49. Pipeline rules.**
-- `hired` only follows `offer`, and is final.
+- `hired` only follows `offer`. *Amended by D81:* a hire can be undone back to `offer`.
 - Staff can skip forward once interest exists, step back one stage to fix mistakes, and reopen a rejected or withdrawn referral up to its previous stage.
 - Every move is a time-stamped `ReferralTransition` plus an audit entry.
 
@@ -323,3 +323,49 @@ On an emulated slow-4G phone with 4× CPU throttling, the survey page must be us
 
 **D75. The privacy notice has one source.**
 The `/privacy` page renders `docs/PRIVACY.md` through a small renderer that outputs only React elements, never raw HTML.
+
+## Final audit (after Phase 5)
+
+**D76. Lockout after repeated failures, on top of plain rate limits.**
+- **Graduate and partner links:** 10 failed tokens per IP in a 15-minute window lock that IP out, even when it then presents a valid link.
+- **One-time codes:** 10 wrong codes per graduate per hour lock **all** codes (email change, export, delete), on top of 5 tries per code.
+
+**D77. Deletion scrubs everything.**
+- Names are now logged in audit diffs only as `changed`.
+- On deletion, all existing audit rows about the graduate are deep-scrubbed: personal keys, plus any string containing their name, email or phone. The IP and user agent of their own actions are removed.
+- Rate-limit counters keyed by their email hash or IPs are removed.
+- The email queue never stores addresses or rendered bodies, and its payloads are cleared.
+- A test searches **every text, JSON and array column in every schema** (including pg-boss) after a deletion.
+
+**D78. Every server action and route validates its input with Zod.**
+- Every server action's first statement validates its declared parameters with a Zod tuple (`parseArgs`). Next.js forbids `arguments` in server actions, and undeclared extra arguments are never read.
+- Route handlers validate their params and query.
+- A static test fails CI if any action or route lacks this.
+
+**D79. CSRF.**
+Middleware refuses any non-GET request whose `Origin` is missing or foreign. Two endpoints are exempt because they have their own protection: Auth.js (CSRF token) and the RFC 8058 unsubscribe endpoint (token in the URL).
+This is on top of Next.js's own server-action origin check.
+
+**D80. Email provider errors.**
+Provider error text can echo a recipient's name, which no pattern can reliably detect. So only the error class and SMTP/HTTP status code are logged or stored. Stack traces and phone numbers are scrubbed in logs too.
+
+**D81. A hire can be undone.**
+- **Move:** `hired` → `offer` (staff only, never blocked by consent changes).
+- **Effect:** the employment record(s) the hire created are deleted: the prefilled record and any staff correction chained to it. Each deletion is audited with a snapshot.
+- **Why deletion is acceptable here:** those records were produced by the mistaken action, not reported by anyone. Records the graduate reported are never touched, so "history is never overwritten" still holds for reported facts.
+
+**D82. One catch-up survey.**
+If any milestone is `missed`, the most recent one becomes a single catch-up survey ("where are you now?"), due immediately. It is never moved or re-created.
+Its answer is dated when given, so it only counts towards a milestone figure if it falls inside that milestone's window.
+
+**D83. Staff changing an email.**
+When staff change a graduate's email (e.g. after a bounce), the change is audited distinctly (`graduate.email_changed_by_staff`). Links sent to the old address are revoked, because that inbox may now belong to someone else. Failed or bounced check-ins are re-sent to the new address.
+
+**D84. New graduates are presumed searching.**
+- **Who:** graduates within 30 days of graduation who have no records and haven't said "not looking".
+- **What:** they are presumed **searching** from their graduation date, via a `graduation_default` record. This makes them matchable and visible in the long-search queue.
+- **Metrics:** these records are excluded from **every outcome metric**, so non-responders still count as unknown and the response rate stays honest. Their first real answer replaces the presumption.
+- **Not applied** to imported historical cohorts.
+
+**D85. The suppression threshold is enforced twice.**
+The settings schema refuses values below 5, and the report builder clamps the threshold to at least 5 itself, so a bad stored value can't lower it.

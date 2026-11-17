@@ -77,6 +77,12 @@ test("a11y + CSP: graduate self-update, survey, match and partner portal", async
   await pctx.close();
 });
 
+test("CSRF: cross-site or Origin-less state-changing requests are refused by the app", async ({ request, baseURL }) => {
+  expect((await request.post("/graduates", { headers: { origin: "https://evil.example", "next-action": "x" }, data: "" })).status()).toBe(403);
+  expect((await request.post("/reports", { headers: { "next-action": "x" }, data: "" })).status()).toBe(403);
+  expect((await request.post("/graduates", { headers: { origin: baseURL!, "next-action": "x" }, data: "" })).status()).not.toBe(403);
+});
+
 test("security headers", async ({ request }) => {
   const r = await request.get("/login");
   const h = r.headers();

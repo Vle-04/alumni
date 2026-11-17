@@ -275,6 +275,7 @@ enum RecordSource {
   staff_entry
   csv_import
   referral_hire
+  graduation_default // presumed "searching" at graduation; never counted in outcome metrics
 }
 
 model EmploymentRecord {
@@ -356,6 +357,8 @@ model SurveyInstance {
   openedAt       DateTime?
   completedAt    DateTime?
   status         SurveyStatus @default(scheduled)
+  /// One-off "where are you now?" survey for graduates whose milestones were all missed.
+  catchUp        Boolean      @default(false)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   graduate       Graduate     @relation(fields: [graduateId], references: [id], onDelete: Cascade)

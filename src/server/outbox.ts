@@ -78,7 +78,16 @@ export async function recoverStuck(now = new Date()): Promise<{ retried: number;
   return { retried: 0, uncertain: r.count };
 }
 
-const scrubError = (e: unknown) => String(e instanceof Error ? `${e.name}: ${e.message}` : e).replace(/[^\s@"']+@[^\s@"']+/g, "[email]").slice(0, 300);
+/**
+ * Provider error text can echo the recipient's address or NAME, which no pattern can reliably
+ * detect — so only the error class and SMTP/HTTP status code are kept (in logs and in the DB).
+ */
+const scrubError = (e: unknown) => {
+  const name = e instanceof Error ? e.name : "Error";
+  const msg = e instanceof Error ? e.message : String(e);
+  const code = /\b([45]\d\d)\b/.exec(msg)?.[1] ?? (e as { code?: unknown })?.code;
+  return `${name}${code ? ` (code ${String(code).slice(0, 20)})` : ""}`;
+};
 
 async function deliver(id: string, now: Date): Promise<"sent" | "deferred" | "suppressed" | "failed" | "dead"> {
   const row = await prisma.outboundEmail.findUniqueOrThrow({
@@ -109,6 +118,7 @@ async function deliver(id: string, now: Date): Promise<"sent" | "deferred" | "su
   const ctx = {
     firstName,
     milestone: typeof payload.milestone === "number" ? payload.milestone : undefined,
+    catchUp: payload.catchUp === true,
     link: graduateLink(g, { surveyId: typeof payload.surveyId === "string" ? payload.surveyId : undefined, matchId: typeof payload.matchId === "string" ? payload.matchId : undefined, now }),
     unsubscribeUrl: RESPECTS_UNSUBSCRIBE.has(row.kind) ? unsubscribeLink(g.id, now) : undefined,
     code: typeof payload.codeEnc === "string" ? decryptOpt(payload.codeEnc) ?? undefined : undefined,

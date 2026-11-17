@@ -26,6 +26,10 @@ export function partnerLink(c: { id: string; tokenVersion: number }, now = new D
   return `${env().APP_URL}/p/${signToken({ sub: c.id, v: c.tokenVersion, p: "partner", exp: expiresIn(now, PARTNER_LINK_DAYS * 86400) }, env().TOKEN_SIGNING_KEY)}`;
 }
 
+export function partnerCookieOptions() {
+  return { httpOnly: true, sameSite: "lax" as const, secure: env().APP_URL.startsWith("https://"), path: "/", maxAge: PARTNER_SESSION_SECONDS };
+}
+
 export function partnerSessionValue(c: { id: string; tokenVersion: number }, now = new Date()) {
   return signToken({ sub: c.id, v: c.tokenVersion, p: "session", ref: "partner", exp: expiresIn(now, PARTNER_SESSION_SECONDS) }, env().TOKEN_SIGNING_KEY);
 }

@@ -6,6 +6,9 @@
  *  - Milestones already more than `missedGraceDays` in the past when (re)scheduled are marked
  *    "missed" and never sent (no "1-month" survey two years after graduation).
  *  - Removing the graduation date cancels unsent instances; setting it again revives them.
+ *  - CATCH-UP: if any milestone is "missed", the most recent missed one becomes a single catch-up
+ *    survey due now ("where are you now?"). At most one catch-up per graduate, ever; once created
+ *    it is never moved or re-created by later re-planning.
  */
 import { MILESTONES, type Milestone } from "../enums";
 import { addDays, addMonthsUtc } from "../records/staleness";
@@ -27,11 +30,12 @@ export interface ExistingInstance {
   milestone: number;
   status: SurveyStatus;
   scheduledFor: Date;
+  catchUp?: boolean;
 }
 
 export type PlanAction =
-  | { type: "create"; milestone: Milestone; scheduledFor: Date; status: "scheduled" | "missed" }
-  | { type: "update"; id: string; milestone: number; scheduledFor: Date; status: "scheduled" | "missed" | "cancelled" }
+  | { type: "create"; milestone: Milestone; scheduledFor: Date; status: "scheduled" | "missed"; catchUp?: true }
+  | { type: "update"; id: string; milestone: number; scheduledFor: Date; status: "scheduled" | "missed" | "cancelled"; catchUp?: true }
   | { type: "keep"; id: string; milestone: number };
 
 export function milestoneDueDate(graduationDate: Date, milestone: Milestone, cfg: SchedulingConfig = DEFAULT_SCHEDULING): Date {
@@ -56,6 +60,10 @@ export function planSurveys(
       } else if (ex) actions.push({ type: "keep", id: ex.id, milestone: m });
       continue;
     }
+    if (ex?.catchUp) {
+      actions.push({ type: "keep", id: ex.id, milestone: m }); // a catch-up is never moved
+      continue;
+    }
     const due = milestoneDueDate(graduationDate, m, cfg);
     const status = due < addDays(now, -cfg.missedGraceDays) ? "missed" : "scheduled";
     if (!ex) actions.push({ type: "create", milestone: m, scheduledFor: due, status });
@@ -63,7 +71,23 @@ export function planSurveys(
       actions.push({ type: "update", id: ex.id, milestone: m, scheduledFor: due, status });
     } else actions.push({ type: "keep", id: ex.id, milestone: m });
   }
-  return actions;
+  return graduationDate ? addCatchUp(actions, existing, now) : actions;
+}
+
+/** Turns the most recent missed milestone into the graduate's one catch-up survey, due now. */
+function addCatchUp(actions: PlanAction[], existing: readonly ExistingInstance[], now: Date): PlanAction[] {
+  if (existing.some((e) => e.catchUp)) return actions;
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const missed = actions.filter((a) =>
+    a.type === "keep" ? byId.get(a.id)?.status === "missed" : a.status === "missed",
+  );
+  const latest = missed.sort((a, b) => b.milestone - a.milestone)[0];
+  if (!latest) return actions;
+  return actions.map((a) => {
+    if (a !== latest) return a;
+    if (a.type === "create") return { ...a, status: "scheduled" as const, scheduledFor: now, catchUp: true as const };
+    return { type: "update" as const, id: a.id, milestone: a.milestone, scheduledFor: now, status: "scheduled" as const, catchUp: true as const };
+  });
 }
 
 // ─── Reminders ───────────────────────────────────────────────

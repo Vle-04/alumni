@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditDiff } from "./redact";
+import { auditDiff, scrubAuditPayload } from "./redact";
 
 describe("auditDiff", () => {
   it("records only changed fields", () => {
@@ -16,5 +16,18 @@ describe("auditDiff", () => {
   });
   it("compares dates by value and ignores timestamps", () => {
     expect(auditDiff({ d: new Date("2024-01-01"), updatedAt: 1 }, { d: new Date("2024-01-01"), updatedAt: 2 })).toEqual({});
+  });
+});
+
+describe("personal fields and scrubbing", () => {
+  it("logs name changes only as changed", () => {
+    expect(auditDiff({ fullName: "Ani P" }, { fullName: "Ani Q" })).toEqual({ fullName: { changed: true } });
+  });
+  it("scrubs stored payloads by key and by value", () => {
+    const out = scrubAuditPayload({ changes: { fullName: { before: "Zeb Q", after: "Zebulon Q" }, status: { before: "a", after: "b" } }, meta: { note: "x", text: "called Zebulon Q today", list: ["zebulon q"] } }, ["Zebulon Q", "z@x.test"]);
+    expect(out).toEqual({ changes: { fullName: { changed: true }, status: { before: "a", after: "b" } }, meta: { note: { changed: true }, text: "[removed]", list: ["[removed]"] } });
+  });
+  it("ignores needles too short to be meaningful", () => {
+    expect(scrubAuditPayload({ a: "ab cd" }, ["ab", ""])).toEqual({ a: "ab cd" });
   });
 });

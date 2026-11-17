@@ -8,7 +8,7 @@
  *  - employers appear by name only with at least k hires; the rest fold into "Other employers".
  */
 import { EMPLOYMENT_STATUSES, type EmploymentStatus } from "../enums";
-import { cell, safeRate, suppressGroup, type SafeCell, type SafeRate } from "./suppression";
+import { MIN_CELL, cell, safeRate, suppressGroup, type SafeCell, type SafeRate } from "./suppression";
 import {
   DEFAULT_REPORT_CONFIG, currentDistribution, employmentAtMilestone, freshness, hiresByCompany, timeToFirstJob,
   type ReportConfig, type ReportGraduate,
@@ -88,8 +88,11 @@ export function buildOutcomesReport(
   cohorts: readonly CohortInfo[],
   companies: readonly CompanyInfo[],
   now: Date,
-  cfg: ReportConfig = DEFAULT_REPORT_CONFIG,
+  rawCfg: ReportConfig = DEFAULT_REPORT_CONFIG,
 ): OutcomesReport {
+  // Defence in depth: the settings schema already refuses < 5, but a bad value in the database
+  // (or a caller passing a config) can never lower the privacy threshold below MIN_CELL.
+  const cfg = { ...rawCfg, minCell: Math.max(MIN_CELL, rawCfg.minCell) };
   const k = cfg.minCell;
   const consenting = allGrads.filter((g) => g.includeInReporting);
   const perCohort = new Map<string, number>();

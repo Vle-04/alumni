@@ -43,7 +43,8 @@ async function loadFacts(f: ReportFilters) {
     select: {
       id: true, cohortId: true, graduationDateOverride: true,
       consents: { where: { purpose: "outcomes_reporting", revokedAt: null }, select: { id: true } },
-      employmentRecords: { select: { status: true, reportedAt: true, startDate: true, companyId: true, inField: true, roleCategory: true, salaryBand: true } },
+      // Presumed "searching at graduation" records are not reported facts: excluded from every metric.
+      employmentRecords: { where: { source: { not: "graduation_default" } }, select: { status: true, reportedAt: true, startDate: true, companyId: true, inField: true, roleCategory: true, salaryBand: true } },
     },
   });
   const gradDate = new Map(cohorts.map((c) => [c.id, c.graduationDate]));

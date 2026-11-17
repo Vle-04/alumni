@@ -17,6 +17,16 @@ test.describe("Marketing / Leadership", () => {
     await expect(page.getByText("Median time to first job")).toBeVisible();
     await expect(page.getByRole("heading", { name: /Top employers/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Employed by month after graduation/ })).toBeVisible();
+    // AUDIT 9: role and salary-band distributions, cohort trend, data freshness.
+    await expect(page.getByRole("heading", { name: /Roles of employed graduates/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Monthly salary bands/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Cohort comparison/ })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Data freshness" })).toContainText(/updated in the last 90 days/);
+    for (const region of [/Roles of employed graduates/, /Monthly salary bands/]) {
+      await page.getByRole("region", { name: region }).getByText("Show data table").click();
+    }
+    await expect(page.getByRole("table", { name: "Roles" }).getByRole("row")).not.toHaveCount(1);
+    await expect(page.getByRole("table", { name: "Salary bands" }).getByRole("row")).not.toHaveCount(1);
 
     // Every chart has a table view
     await page.getByRole("region", { name: /Cohort comparison/ }).getByText("Show data table").click();

@@ -57,7 +57,7 @@ describe("survey scheduling", () => {
     await makeGraduate(cohort.id);
     const base = { programId: cohort.programId, name: cohort.name, startDate: "2023-01-05" };
     await updateCohort(cs, cohort.id, { ...base, graduationDate: "2023-06-30" });
-    expect((await prisma.surveyInstance.findMany()).map((s) => s.status)).toEqual(["missed", "missed", "missed", "missed"]);
+    expect((await prisma.surveyInstance.findMany({ orderBy: { milestone: "asc" } })).map((s) => s.status + (s.catchUp ? "+catchup" : ""))).toEqual(["missed", "missed", "missed", "scheduled+catchup"]);
     await updateCohort(cs, cohort.id, { ...base, graduationDate: "" });
     expect(new Set((await prisma.surveyInstance.findMany()).map((s) => s.status))).toEqual(new Set(["cancelled"]));
   });
@@ -74,5 +74,45 @@ describe("survey scheduling", () => {
     expect(s2.id).toBe(s1.id);
     expect(s2.scheduledFor > s1.scheduledFor).toBe(true);
     expect(await prisma.surveyInstance.count({ where: { graduateId: id } })).toBe(4);
+  });
+});
+
+describe("AUDIT 11: catch-up survey for missed milestones", () => {
+  beforeEach(resetDb);
+
+  it("an imported graduate from an old cohort gets exactly one catch-up survey, sent once, never again", async () => {
+    const { setEmailAdapter } = await import("@/server/email/adapters");
+    const { FakeEmailAdapter } = await import("./fake-email");
+    const { runSurveyTick } = await import("@/server/services/surveys");
+    const { previewImport, commitImport } = await import("@/server/services/import");
+    const fake = new FakeEmailAdapter();
+    setEmailAdapter(fake);
+    const cs = await staff("CAREER_SERVICES");
+    const old = await makeCohort({ name: "Old Cohort 2023", graduationDate: new Date("2023-06-30") });
+    const csv = `full_name,email,cohort\nOld Grad,old.grad@example.test,${old.name}\n`;
+    await commitImport(cs, (await previewImport(cs, "old.csv", csv)).batchId, csv);
+
+    const surveys = await prisma.surveyInstance.findMany({ orderBy: { milestone: "asc" } });
+    expect(surveys.map((s) => `${s.milestone}:${s.status}${s.catchUp ? "+catchup" : ""}`)).toEqual(["1:missed", "3:missed", "6:missed", "12:scheduled+catchup"]);
+
+    const t = new Date(); const noon = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + 1, 12));
+    await runSurveyTick(noon);
+    await runSurveyTick(noon);
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]!.subject).toBe("A quick career check-in from the Academy");
+
+    // Re-planning (e.g. the cohort date is corrected) never creates a second catch-up.
+    await updateCohort(cs, old.id, { programId: old.programId, name: old.name, startDate: "2023-01-01", graduationDate: "2023-05-31" });
+    expect(await prisma.surveyInstance.count({ where: { catchUp: true } })).toBe(1);
+    expect(await prisma.surveyInstance.count()).toBe(4);
+    setEmailAdapter(undefined);
+  });
+
+  it("graduates with no missed milestones get no catch-up", async () => {
+    const cs = await staff("CAREER_SERVICES");
+    const c = await makeCohort({ graduationDate: null });
+    await makeGraduate(c.id);
+    await updateCohort(cs, c.id, { programId: c.programId, name: c.name, startDate: "2026-01-05", graduationDate: future(10) });
+    expect(await prisma.surveyInstance.count({ where: { catchUp: true } })).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 /** GET /api/reports/export?format=csv|pdf&<filters> — aggregates only; every export is audited. */
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { getStaffContext } from "@/server/session";
 import { exportReport } from "@/server/services/reports";
 import { AppError } from "@/server/errors";
@@ -10,7 +11,8 @@ export async function GET(req: NextRequest) {
   const ctx = await getStaffContext();
   if (!ctx) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   const sp = req.nextUrl.searchParams;
-  const format = sp.get("format") === "pdf" ? "pdf" : "csv";
+  const format = z.enum(["csv", "pdf"]).catch("csv").parse(sp.get("format") ?? undefined);
+  // The remaining filters are validated by reportFiltersSchema inside the service.
   const filters = { programId: sp.get("programId"), cohortId: sp.get("cohortId"), from: sp.get("from"), to: sp.get("to"), count: sp.getAll("count").length ? sp.getAll("count") : undefined, inField: sp.get("inField") };
   try {
     const out = await exportReport(ctx, filters, format);

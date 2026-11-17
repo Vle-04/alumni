@@ -17,13 +17,34 @@ describe("planSurveys", () => {
     expect(plan.filter((a) => a.type === "create").map((a) => a.milestone)).toEqual([1, 3, 6, 12]);
   });
 
-  it("marks milestones already well in the past as missed", () => {
+  it("marks milestones already well in the past as missed, with ONE catch-up for the latest missed", () => {
     const plan = planSurveys(new Date("2025-02-10T00:00:00Z"), [], now); // 12-month due 2026-02-10 (future)
-    expect(plan.map((a) => (a.type === "create" ? a.status : null))).toEqual(["missed", "missed", "missed", "scheduled"]);
+    expect(plan.map((a) => (a.type === "create" ? `${a.status}${a.catchUp ? "+catchup" : ""}` : null))).toEqual(["missed", "missed", "scheduled+catchup", "scheduled"]);
+    expect(plan.find((a) => a.type === "create" && a.catchUp)).toMatchObject({ milestone: 6, scheduledFor: now });
   });
 
-  it("marks every milestone missed for long-ago graduates", () => {
-    expect(planSurveys(new Date("2024-01-01T00:00:00Z"), [], now).every((a) => a.type === "create" && a.status === "missed")).toBe(true);
+  it("long-ago graduates: three missed milestones and one catch-up (the 12-month) due now", () => {
+    const plan = planSurveys(new Date("2024-01-01T00:00:00Z"), [], now);
+    expect(plan.map((a) => (a.type === "create" ? `${a.milestone}:${a.status}${a.catchUp ? "+catchup" : ""}` : ""))).toEqual(["1:missed", "3:missed", "6:missed", "12:scheduled+catchup"]);
+  });
+
+  it("never creates a second catch-up and never moves an existing one", () => {
+    const existing: ExistingInstance[] = [
+      { id: "a", milestone: 1, status: "missed", scheduledFor: new Date("2024-02-01T09:00:00Z") },
+      { id: "b", milestone: 3, status: "missed", scheduledFor: new Date("2024-04-01T09:00:00Z") },
+      { id: "c", milestone: 6, status: "missed", scheduledFor: new Date("2024-07-01T09:00:00Z") },
+      { id: "d", milestone: 12, status: "completed", scheduledFor: now, catchUp: true },
+    ];
+    const plan = planSurveys(new Date("2023-06-01T00:00:00Z"), existing, now); // date changed later
+    expect(plan.filter((a) => a.type !== "keep" && "catchUp" in a && a.catchUp)).toEqual([]);
+    expect(plan.find((a) => a.milestone === 12)).toEqual({ type: "keep", id: "d", milestone: 12 });
+  });
+
+  it("re-planning with an existing missed row converts it (no duplicate rows)", () => {
+    const existing: ExistingInstance[] = planSurveys(new Date("2024-01-01T00:00:00Z"), [], now).map((a, i) => ({ id: `s${i}`, milestone: a.milestone, status: "missed", scheduledFor: now }));
+    const plan = planSurveys(new Date("2024-01-01T00:00:00Z"), existing, now);
+    expect(plan.filter((a) => a.type === "create")).toEqual([]);
+    expect(plan.filter((a) => a.type === "update" && a.catchUp).map((a) => a.milestone)).toEqual([12]);
   });
 
   it("keeps a recently passed milestone sendable (within the grace period)", () => {
@@ -32,6 +53,7 @@ describe("planSurveys", () => {
   });
 
   it("is idempotent: re-planning with the same date changes nothing", () => {
+    // (no missed milestones here, so no catch-up is involved)
     const existing: ExistingInstance[] = planSurveys(grad, [], now).map((a, i) => ({ id: `s${i}`, milestone: a.milestone, status: a.type === "create" ? a.status : "scheduled", scheduledFor: a.type === "create" ? a.scheduledFor : now }));
     expect(planSurveys(grad, existing, now).every((a) => a.type === "keep")).toBe(true);
   });

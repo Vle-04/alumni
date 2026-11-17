@@ -5,7 +5,29 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Paths with their own CSRF defence: Auth.js (CSRF token) and RFC 8058 unsubscribe (token in URL, mail clients send no Origin). */
+const CSRF_EXEMPT = ["/api/auth/", "/api/unsubscribe/"];
+
+/**
+ * CSRF: any state-changing request must come from this site. Browsers always send Origin on
+ * POST; a missing or foreign Origin is refused. (Next.js also checks server-action origins —
+ * this is defence in depth and covers route handlers too.)
+ */
+export function isCrossSite(request: NextRequest): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return false;
+  if (CSRF_EXEMPT.some((p) => request.nextUrl.pathname.startsWith(p))) return false;
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (!origin || !host) return true;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 export function middleware(request: NextRequest) {
+  if (isCrossSite(request)) return new NextResponse("Cross-site request refused.", { status: 403 });
   const nonce = btoa(crypto.randomUUID());
   const dev = process.env.NODE_ENV === "development";
   const https = (process.env.APP_URL ?? "").startsWith("https://");
