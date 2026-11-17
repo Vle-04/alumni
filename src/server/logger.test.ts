@@ -7,6 +7,11 @@ describe("logger scrubbing", () => {
       email: "[redacted]", fullName: "[redacted]", graduateId: "g1", phoneEnc: "[redacted]",
     });
   });
+  it("hides only keys that are exactly 'ip' or end in 'Ip'; 'skipped' stays visible", () => {
+    expect(__test.scrub({ skipped: 3, ip: "203.0.113.7", clientIp: "198.51.100.4" })).toEqual({
+      skipped: 3, ip: "[redacted]", clientIp: "[redacted]",
+    });
+  });
   it("masks phone numbers and scrubs stack traces", () => {
     expect(__test.scrub("call +1 555 0177 now")).toBe("call [phone] now");
     expect(__test.scrub("2026-11-17T10:00:00Z")).toBe("2026-11-17T10:00:00Z"); // timestamps untouched

@@ -4,7 +4,9 @@
  */
 type Level = "debug" | "info" | "warn" | "error";
 const ORDER: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
-const SENSITIVE_KEY = /(email|phone|name|token|code|password|secret|linkedin|address|answers|ip)/i;
+const SENSITIVE_KEY = /(email|phone|name|token|code|password|secret|linkedin|address|answers)/i;
+/** IP addresses: only a key that is exactly "ip" or ends in "Ip" (clientIp) — not "skipped", "description". */
+const IP_KEY = /^ip$|Ip$/;
 const EMAIL_RE = /[^\s@"']+@[^\s@"']+\.[^\s@"']+/g;
 const PHONE_RE = /\+\d[\d ()-]{6,}\d/g;
 const scrubText = (s: string) => s.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
@@ -17,7 +19,7 @@ function scrub(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) return value.map((v) => scrub(v, depth + 1));
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = SENSITIVE_KEY.test(k) && !/Id$|^id$|Count$/.test(k) ? "[redacted]" : scrub(v, depth + 1);
+    for (const [k, v] of Object.entries(value)) out[k] = (SENSITIVE_KEY.test(k) || IP_KEY.test(k)) && !/Id$|^id$|Count$/.test(k) ? "[redacted]" : scrub(v, depth + 1);
     return out;
   }
   return value;
