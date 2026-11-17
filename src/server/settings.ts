@@ -38,6 +38,18 @@ const retentionSchema = z.object({
   emailLogDays: z.number().int().min(7).max(3650),
 });
 
+/**
+ * Lockout thresholds. Bounded both ways: too strict locks out whole campuses/mobile networks that
+ * share one IP; too lax lets guessing continue. Minimum 5 failures, window 5–60 min (codes 15–240).
+ */
+const lockoutRule = (minWindow: number, maxWindow: number) =>
+  z.object({ limit: z.number().int().min(5).max(100), windowMinutes: z.number().int().min(minWindow).max(maxWindow) }).strict();
+const securitySchema = z.object({
+  gradLink: lockoutRule(5, 60),
+  partnerLink: lockoutRule(5, 60),
+  otp: lockoutRule(15, 240),
+}).strict();
+
 export const SETTING_DEFAULTS = {
   surveys: {
     skipWindowDays: 14,
@@ -61,9 +73,14 @@ export const SETTING_DEFAULTS = {
     freshnessDays: 90,
   } as z.infer<typeof reportingSchema>,
   retention: { anonymizeAfterYears: 5, auditLogDays: 3 * 365, emailLogDays: 90 } satisfies z.infer<typeof retentionSchema>,
+  security: {
+    gradLink: { limit: 10, windowMinutes: 15 },
+    partnerLink: { limit: 10, windowMinutes: 15 },
+    otp: { limit: 10, windowMinutes: 60 },
+  } satisfies z.infer<typeof securitySchema>,
 };
 
-export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema, reporting: reportingSchema, retention: retentionSchema } as const;
+export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema, reporting: reportingSchema, retention: retentionSchema, security: securitySchema } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type Settings = typeof SETTING_DEFAULTS;
 

@@ -20,13 +20,19 @@ function parse(key: SettingKey, fd: FormData): unknown {
       return { employedStatuses: fd.getAll("employedStatuses"), qualifyingJobStatuses: fd.getAll("qualifyingJobStatuses"), windowBeforeDays: num(fd, "windowBeforeDays"), graceDays: num(fd, "graceDays"), minCell: num(fd, "minCell"), freshnessDays: num(fd, "freshnessDays") };
     case "retention":
       return { anonymizeAfterYears: num(fd, "anonymizeAfterYears"), auditLogDays: num(fd, "auditLogDays"), emailLogDays: num(fd, "emailLogDays") };
+    case "security":
+      return {
+        gradLink: { limit: num(fd, "gradLinkLimit"), windowMinutes: num(fd, "gradLinkWindow") },
+        partnerLink: { limit: num(fd, "partnerLinkLimit"), windowMinutes: num(fd, "partnerLinkWindow") },
+        otp: { limit: num(fd, "otpLimit"), windowMinutes: num(fd, "otpWindow") },
+      };
     default:
       return undefined; // unknown key → rejected by updateSettings
   }
 }
 
-export async function saveSettingsAction(key: SettingKey, _p: ActionResult<null>, fd: FormData): Promise<ActionResult<null>> {
-  parseArgs(z.tuple([z.enum(["surveys", "matching", "reporting", "retention"]), A.prev, A.form]), [key, _p, fd]);
+export async function saveSettingsAction(...args: [key: SettingKey, _p: ActionResult<null>, fd: FormData]): Promise<ActionResult<null>> {
+  const [key, _p, fd] = parseArgs(z.tuple([z.enum(["surveys", "matching", "reporting", "retention", "security"]), A.prev, A.form]), args);
   const r = await runAction(async () => {
     const ctx = await staffActionContext("settings:manage");
     await updateSettings(ctx, key, parse(key, fd));

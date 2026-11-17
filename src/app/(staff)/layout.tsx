@@ -24,9 +24,9 @@ export default async function StaffLayout({ children }: { children: React.ReactN
     { href: "/admin/settings", label: t("nav.settings"), show: can(role, "settings:manage") },
   ].filter((i) => i.show);
 
-  async function doSignOut(formData?: FormData) {
+  async function doSignOut(...args: [_formData?: FormData]) {
     "use server";
-    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    parseArgs(z.tuple([A.form.optional()]), args);
     await signOut({ redirectTo: "/login" });
   }
 

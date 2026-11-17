@@ -1,0 +1,13 @@
+# Optional local HTTPS in front of the app (docker compose --profile tls up tls).
+# Used by the TLS cookie test (npm run test:e2e:tls) and handy for trying the app over HTTPS.
+# Caddy's internal CA issues a certificate for localhost; it sets X-Forwarded-For/Proto/Host,
+# so the app runs with TRUSTED_PROXY_HOPS=1 behind it.
+{
+	auto_https disable_redirects
+	local_certs
+}
+
+https://localhost:8443 {
+	tls internal
+	reverse_proxy {$UPSTREAM}
+}

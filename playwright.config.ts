@@ -21,10 +21,12 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] }, testMatch: /graduate-.*\.spec\.ts/ },
   ],
   webServer: {
-    command: `npx next start -p ${PORT}`,
+    command: `npx tsx server.ts`,
     port: PORT,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { ...process.env, DATABASE_URL: testDb, APP_URL: `http://localhost:${PORT}`, EMAIL_PROVIDER: "console" } as Record<string, string>,
+    // TRUSTED_PROXY_HOPS=1: the test runner acts as the trusted proxy, so specs can simulate distinct
+    // client IPs by appending them to x-forwarded-for (see tests/e2e/client-ip.spec.ts).
+    env: { ...process.env, NODE_ENV: "production", PORT: String(PORT), DATABASE_URL: testDb, APP_URL: `http://localhost:${PORT}`, EMAIL_PROVIDER: "console", TRUSTED_PROXY_HOPS: "1" } as Record<string, string>,
   },
 });

@@ -9,12 +9,13 @@ import { auth } from "./auth";
 import { prisma } from "./db";
 import { UnauthenticatedError, ForbiddenError } from "./errors";
 import type { RequestContext } from "./context";
+import { clientIp } from "./client-ip";
 
 export type StaffContext = RequestContext & { actor: { type: "user"; id: string; role: Role }; userName: string | null; userEmail: string };
 
 async function requestMeta() {
   const h = await headers();
-  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? null;
+  const ip = clientIp(h);
   return { ip, userAgent: h.get("user-agent") };
 }
 

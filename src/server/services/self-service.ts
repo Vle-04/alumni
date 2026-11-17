@@ -186,7 +186,7 @@ export async function requestOtp(ctx: RequestContext, rawPurpose: OtpPurpose) {
 export async function consumeOtp(db: Db, graduateId: string, purpose: OtpPurpose, rawCode: unknown) {
   const fail = () => new ValidationError("That code is wrong or has expired. Request a new one.", { code: ["That code is wrong or has expired."] });
   // Lockout across ALL codes and purposes: 10 wrong codes per hour stops guessing entirely.
-  if (await isLockedOut("otp", graduateId)) throw new RateLimitError(retryAfterSeconds("otp"));
+  if (await isLockedOut("otp", graduateId)) throw new RateLimitError(await retryAfterSeconds("otp"));
   const code = z.string().trim().max(12).catch("").parse(rawCode);
   const otp = await db.oneTimeCode.findFirst({ where: { graduateId, purpose, consumedAt: null }, orderBy: { createdAt: "desc" } });
   if (!otp || otp.expiresAt < new Date() || otp.attempts >= OTP_MAX_ATTEMPTS) {

@@ -49,7 +49,8 @@ npm run dev            # http://localhost:3000
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Next.js dev server |
+| `npm run dev` | Dev server: the custom server in `server.ts` wrapping Next.js in dev mode |
+| `npm start` | Production server (after `npm run build`): `server.ts` wrapping Next.js; resolves the client IP from the socket (see Deploying) |
 | `npm run worker` | Background job worker (pg-boss) |
 | `npm run jobs:run -- <job>` | Run one job immediately (no argument lists the jobs) |
 | `npm run db:migrate` | Apply committed migrations |
@@ -58,6 +59,7 @@ npm run dev            # http://localhost:3000
 | `npm test` | Unit and integration tests. Integration tests use `TEST_DATABASE_URL`, which must end in `_test`. |
 | `npm run test:coverage` | Unit tests with domain coverage (threshold 80%) |
 | `npm run test:e2e` | Playwright end-to-end tests (builds must exist: `npm run build`) |
+| `npm run test:e2e:tls` | HTTPS suite: production build behind Caddy (`docker compose --profile tls`), asserting real `Set-Cookie` flags. Needs Docker. |
 | `npm run test:e2e -- --project=mobile` | Graduate flows on a Pixel 7 profile, including the slow-phone performance budget |
 | `npm run check:no-scraping` | Fails if scraping libraries, non-allowlisted outbound HTTP or `linkedin.com` access appear in app code |
 
@@ -192,7 +194,15 @@ Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also sh
 
 ## Deploying
 
-- **Run behind TLS.** Set `APP_URL=https://…`; cookies then become `Secure` and the CSP adds `upgrade-insecure-requests`.
+- **Run behind TLS.** Set `APP_URL=https://…`; cookies then become `Secure` and the CSP adds `upgrade-insecure-requests`. `APP_URL` also pins the URL used in sign-in emails, which are never built from request headers. To try HTTPS locally, run `docker compose --profile tls up tls`; Caddy serves https://localhost:8443.
+- **Start with `npm start`, not `next start`.** The custom server in `server.ts` is what makes client IPs trustworthy. Started any other way, rate-limited endpoints refuse every request, because no trusted client IP reaches the app; this is a deliberate safe failure.
+- **Client IP (`TRUSTED_PROXY_HOPS`, `CLIENT_IP_HEADER`).** Rate limits and lockouts are keyed by the client IP, so it must not be spoofable.
+  - **No proxy:** leave `TRUSTED_PROXY_HOPS=0` (default). `X-Forwarded-For` is ignored and the socket address is used.
+  - **Behind N reverse proxies** that each append to `X-Forwarded-For`: set `TRUSTED_PROXY_HOPS=N`. The app must then be reachable **only** through those proxies (firewall it), or clients can spoof their address.
+  - **Behind a CDN** that sets its own header (e.g. `cf-connecting-ip`) and overwrites it on every request: set `CLIENT_IP_HEADER` to that name instead.
+  - **No usable IP:** such requests are refused on rate-limited endpoints; they never share an "unknown" bucket.
+  - **The bundled `docker compose` setup:** Docker's port forwarding makes every client appear as the Docker gateway. Fine for local use, but put a proxy in front for real deployments.
+- **Shared networks.** Graduates on one campus or mobile network can share an IP address, so many bad links from that network can briefly lock all of them out. The limits are adjustable under **Settings → Lockout after repeated failures**, with safe minimums.
 - **Keep links out of proxy logs.** Personal links contain tokens, so configure your reverse proxy **not to log the paths** `/u/*`, `/p/*` and `/unsubscribe/*`.
 - **Proxies that rewrite the Host header** need `experimental.serverActions.allowedOrigins` set in `next.config.ts`.
 - **Rotating the encryption key:** prepend a new key, e.g. `DATA_ENCRYPTION_KEYS=v2:<new>,v1:<old>`. New writes use v2 and old data stays readable.

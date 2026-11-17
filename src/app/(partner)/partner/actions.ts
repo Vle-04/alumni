@@ -7,8 +7,8 @@ import { getPartnerContext } from "@/server/partner-session";
 import { submitOpeningAsPartner } from "@/server/services/openings";
 import { ForbiddenError } from "@/server/errors";
 
-export async function submitOpeningAction(_p: ActionResult<string>, fd: FormData): Promise<ActionResult<string>> {
-  parseArgs(z.tuple([A.prev, A.form]), [_p, fd]);
+export async function submitOpeningAction(...args: [_p: ActionResult<string>, fd: FormData]): Promise<ActionResult<string>> {
+  const [_p, fd] = parseArgs(z.tuple([A.prev, A.form]), args);
   const r = await runAction(async () => {
     const ctx = await getPartnerContext();
     if (!ctx) throw new ForbiddenError("Your link has expired. Ask the Academy careers team for a new one.");

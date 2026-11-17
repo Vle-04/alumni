@@ -56,6 +56,14 @@ export function SettingsForms({ s }: { s: Settings }) {
         <N id="minCell" label="Smallest group shown" value={s.reporting.minCell} />
         <N id="freshnessDays" label="Fresh record = updated within (days)" value={s.reporting.freshnessDays} />
       </Section>
+      <Section k="security" title="Lockout after repeated failures" help="Graduates on the same campus or mobile network share one IP address, so a stricter link lockout can briefly lock all of them out. Limits must be at least 5 failures; windows 5–60 minutes (codes 15–240).">
+        <N id="gradLinkLimit" label="Graduate links: failures per IP" value={s.security.gradLink.limit} />
+        <N id="gradLinkWindow" label="…within (minutes)" value={s.security.gradLink.windowMinutes} />
+        <N id="partnerLinkLimit" label="Partner links: failures per IP" value={s.security.partnerLink.limit} />
+        <N id="partnerLinkWindow" label="…within (minutes)" value={s.security.partnerLink.windowMinutes} />
+        <N id="otpLimit" label="One-time codes: wrong codes per graduate" value={s.security.otp.limit} />
+        <N id="otpWindow" label="…within (minutes)" value={s.security.otp.windowMinutes} />
+      </Section>
       <Section k="retention" title="Data retention" help="A daily job anonymizes graduates this many years after graduation and deletes old logs.">
         <N id="anonymizeAfterYears" label="Anonymize graduates after (years since graduation)" value={s.retention.anonymizeAfterYears} />
         <N id="auditLogDays" label="Keep audit log for (days, min 90)" value={s.retention.auditLogDays} />

@@ -1,19 +1,24 @@
 /** GET /api/reports/export?format=csv|pdf&<filters> — aggregates only; every export is audited. */
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStaffContext } from "@/server/session";
-import { exportReport } from "@/server/services/reports";
+import { exportReport, reportFiltersStrictSchema } from "@/server/services/reports";
 import { AppError } from "@/server/errors";
+import { validatedRoute } from "@/lib/route";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+/** Strict: unknown parameters and malformed values are rejected with 422 (nothing is silently dropped). */
+const exportQuerySchema = reportFiltersStrictSchema.extend({
+  format: z.enum(["csv", "pdf"]).default("csv"),
+  count: z.preprocess((v) => (v === undefined || Array.isArray(v) ? v : [v]), reportFiltersStrictSchema.shape.count),
+  inField: z.literal("1").optional().transform((v) => v === "1"),
+}).strict();
+
+export const GET = validatedRoute({ query: exportQuerySchema }, async (_req, { query }) => {
   const ctx = await getStaffContext();
   if (!ctx) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
-  const sp = req.nextUrl.searchParams;
-  const format = z.enum(["csv", "pdf"]).catch("csv").parse(sp.get("format") ?? undefined);
-  // The remaining filters are validated by reportFiltersSchema inside the service.
-  const filters = { programId: sp.get("programId"), cohortId: sp.get("cohortId"), from: sp.get("from"), to: sp.get("to"), count: sp.getAll("count").length ? sp.getAll("count") : undefined, inField: sp.get("inField") };
+  const { format, ...filters } = query;
   try {
     const out = await exportReport(ctx, filters, format);
     return new NextResponse(new Uint8Array(typeof out.body === "string" ? Buffer.from(out.body, "utf8") : out.body), {
@@ -23,4 +28,4 @@ export async function GET(req: NextRequest) {
     if (e instanceof AppError) return NextResponse.json({ error: e.code }, { status: e.status });
     throw e;
   }
-}
+});

@@ -60,6 +60,15 @@ We do not sell your data or share it with anyone else.
 - **5 years after graduation:** your record is anonymised automatically. We remove your name and contact details and keep only anonymous facts (for example "a graduate of this cohort started a job in March"), so our historical statistics stay correct.
 - **Access logs** are kept for 3 years. **Email delivery logs** are kept for 90 days.
 
+## When you delete your account
+
+- **Records about you are edited.** We keep a log of who did what, so access to your data can be checked. That log is normally never changed. Deleting your account is the one exception: we go back through the log and remove your name, email address, phone number and the internet (IP) addresses of your own visits. We keep only the fact that something happened ("a graduate's record was viewed"). Otherwise the log would be a copy of the very data you asked us to delete.
+- **Text that mentions you is cleaned.** Where your name, email or phone appear in text you or staff typed (for example a job title, a company name you entered, or a job description written for you), they are replaced with "[removed]".
+- **Copies outside our database.**
+  - **Email provider:** the service that delivers our emails keeps its own delivery logs (recipient address, subject, delivery time) for **[ACADEMY TO FILL IN: e.g. 30 days, per our email provider's policy]**. We cannot delete those early.
+  - **Database backups:** our backups contain your data until they expire, after **[ACADEMY TO FILL IN: e.g. 35 days]**. Backups are encrypted and only restored to recover from a failure. If one is ever restored, we delete your data again before it is used.
+- **Shared internet connections.** To stop people guessing links and codes, we briefly block an internet address after too many wrong attempts. On a shared connection (a campus or mobile network), one person's mistakes can briefly block others too. Wait a few minutes or ask for a new link.
+
 ## Your rights
 
 On your personal page you can:

@@ -1,8 +1,10 @@
 /**
  * Server actions are public HTTP endpoints: anyone can call them with any arguments.
- * Every action validates its declared parameters with a Zod tuple as its first statement
- * (`parseArgs(schema, [a, b, c])`); form fields are then validated again by the service schema.
- * (Next.js forbids `arguments` in server actions; undeclared extra arguments are never read.)
+ * Every action takes ALL its arguments as a typed rest tuple and validates them with a Zod tuple
+ * as its first statement:  `async function x(...args: [id: string]) { const [id] = parseArgs(S, args) }`
+ * so extra or missing arguments are rejected too. (Next.js forbids the `arguments` object in
+ * server actions — the build fails with "Server Actions cannot use `arguments`" — but typed rest
+ * parameters are allowed and keep call-site types.)
  * A static test (tests/static/validation.test.ts) enforces this for every action and route.
  */
 import { z } from "zod";

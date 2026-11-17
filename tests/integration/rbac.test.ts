@@ -59,6 +59,7 @@ export const INTERNAL = new Set([
   "privacy.anonymizeGraduate",
   "privacy.buildDataExport",
   "privacy.runRetention",
+  "privacy.removeNeedles", // pure string helper
 ]);
 
 describe("Leadership/Marketing cannot reach individual-level services", async () => {

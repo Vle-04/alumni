@@ -10,9 +10,9 @@ import { z } from "zod";
 export default async function Unsubscribe({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ done?: string }> }) {
   const { token } = await params;
   if ((await searchParams).done) return <Alert tone="success">{t("unsub.done")}</Alert>;
-  async function confirm(formData?: FormData) {
+  async function confirm(...args: [_formData?: FormData]) {
     "use server";
-    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    parseArgs(z.tuple([A.form.optional()]), args);
     const r = await resolveGraduateToken(token, ["unsubscribe"]);
     if (r.ok) await unsubscribeByToken(r.graduateId);
     redirect(`/unsubscribe/${token}?done=1`);

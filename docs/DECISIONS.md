@@ -326,18 +326,18 @@ The `/privacy` page renders `docs/PRIVACY.md` through a small renderer that outp
 
 ## Final audit (after Phase 5)
 
-**D76. Lockout after repeated failures, on top of plain rate limits.**
+**D76. Lockout after repeated failures, on top of plain rate limits.** *Amended by D86 (client IP source) and D95 (limits are configurable).*
 - **Graduate and partner links:** 10 failed tokens per IP in a 15-minute window lock that IP out, even when it then presents a valid link.
 - **One-time codes:** 10 wrong codes per graduate per hour lock **all** codes (email change, export, delete), on top of 5 tries per code.
 
-**D77. Deletion scrubs everything.**
+**D77. Deletion scrubs everything.** *Extended by D91 (encrypted values), D92 (linked free text) and D93 (audit-log edits are documented).*
 - Names are now logged in audit diffs only as `changed`.
 - On deletion, all existing audit rows about the graduate are deep-scrubbed: personal keys, plus any string containing their name, email or phone. The IP and user agent of their own actions are removed.
 - Rate-limit counters keyed by their email hash or IPs are removed.
 - The email queue never stores addresses or rendered bodies, and its payloads are cleared.
 - A test searches **every text, JSON and array column in every schema** (including pg-boss) after a deletion.
 
-**D78. Every server action and route validates its input with Zod.**
+**D78. Every server action and route validates its input with Zod.** *Amended by D88 (typed rest tuples, so extra arguments are rejected again) and D90 (validated route wrapper).*
 - Every server action's first statement validates its declared parameters with a Zod tuple (`parseArgs`). Next.js forbids `arguments` in server actions, and undeclared extra arguments are never read.
 - Route handlers validate their params and query.
 - A static test fails CI if any action or route lacks this.
@@ -369,3 +369,64 @@ When staff change a graduate's email (e.g. after a bounce), the change is audite
 
 **D85. The suppression threshold is enforced twice.**
 The settings schema refuses values below 5, and the report builder clamps the threshold to at least 5 itself, so a bad stored value can't lower it.
+
+## Follow-up audit (items 15–23)
+
+**D86. The client IP comes from the socket, through a custom server.**
+- **Why a custom server:** inside Next.js, `x-forwarded-for` is attacker-controlled. Next only fills it from the socket when the client didn't send one, and Next 15 no longer exposes `request.ip`.
+- **What it does:** `server.ts` (started by `npm start` and `npm run dev`) resolves the client IP from the real socket address and passes it in an internal header (`x-alumni-client-ip`). It always overwrites that header, so a client can never set it.
+- **Configuration:**
+  - `TRUSTED_PROXY_HOPS=0` (default) ignores `x-forwarded-for` entirely.
+  - `TRUSTED_PROXY_HOPS=N` takes the address N hops from the right of the chain.
+  - `CLIENT_IP_HEADER` names a proxy-set header to use instead.
+- **App code** gets the IP only through `clientIp()`, and every IP-keyed rate limit and lockout uses it. A static test fails if anything else reads `x-forwarded-for` or `x-real-ip`.
+
+**D87. No usable client IP means the request is refused.**
+This applies on rate-limited endpoints (personal and partner links, staff sign-in, new-link requests): we refuse rather than share one "unknown" bucket.
+It is simple, can't be abused to lock everyone else out, and can't happen behind a correctly configured proxy. If the app is started without `server.ts`, those endpoints fail closed.
+
+**D88. Server actions take ALL their arguments as a typed rest tuple.**
+The form is `(...args: [id: string, …])`, followed by `const […] = parseArgs(schema, args)`.
+
+*What happened:* the first audit validated the `arguments` object, and a Vitest test showed that an extra argument was rejected. That test passed because Vitest calls the functions directly. The production build then failed with Next's compiler error "Server Actions cannot use `arguments`". I switched to validating only the declared parameters and replaced the extra-argument test, so for a while extra arguments were no longer checked.
+
+Typed rest parameters are allowed by the compiler, keep call-site types and give the full argument list, so extra arguments are rejected again. The "extra argument" test is back (`tests/integration/action-args.test.ts`), and the static test requires the `...args: [` form.
+
+**D89. Chart-export filters are strictly validated before they're audited.**
+`reportFiltersStrictSchema` rejects unknown keys and has no silent fallbacks. The serialized filters are capped at 1,000 characters.
+
+**D90. Route handlers use one wrapper.**
+Every route handler is built with `validatedRoute` (`src/lib/route.ts`), which parses params, query and body with Zod before the handler runs.
+- **Enforcement:** the static test requires the wrapper, forbids reading raw input (`searchParams`, `.json()`, `await params`…), and requires a params schema on dynamic segments.
+- **Invalid input:** a 422, or a route-specific response (personal links redirect to the "link not valid" page; unsubscribe returns 400).
+- **Report export:** its query is strict, so invalid filters are rejected at the route, not only inside the service.
+
+**D91. The deletion sweep also checks encrypted copies.**
+It finds every encrypted value by its ciphertext format in every text/JSON column of every schema, so new encrypted columns are covered automatically. It decrypts each value and searches the plaintext. Nothing needed fixing: the graduate's encrypted fields are cleared and one-time codes are deleted.
+
+**D92. Deletion scrubs linked free text.**
+- **Fields cleaned:** the graduate's name, email and phone are replaced with "[removed]" in job titles, names of companies they typed (renamed in place, so the company id is unchanged), and titles and descriptions of openings they were suggested for or referred to. The same strings are also removed from any audit-log entry or email-queue payload containing them.
+- **Untouched:** status, dates, company id and role category, so the outcomes report is identical (tested).
+- **Limit:** a company name that was changed this way changes for everyone who worked there.
+
+**D93. The audit log is append-only, except for deletion scrubbing.**
+On deletion, existing entries about the person (and any entry mentioning their name, email or phone) are edited to remove those values, and the IP and user agent of their own actions are cleared.
+The fact that each action happened is kept. Without the edit, the audit log would keep the very personal data the person asked us to delete.
+
+**D94. Copies outside the database.**
+Email-provider delivery logs and database backups keep a deleted graduate's data until they expire. `docs/PRIVACY.md` states this, with placeholders the Academy must fill in for its provider and backup policy. If a backup is restored, deletions must be re-applied.
+
+**D95. Lockout limits are admin-configurable** (Settings → Lockout after repeated failures).
+- **Default:** 10 failures per 15 minutes for links, 10 per hour for codes.
+- **Safe bounds:** at least 5 failures; windows of 5–60 minutes for links and 15–240 for codes.
+- **Changes** are validated by a strict schema and audit-logged.
+- **Why:** graduates on one campus or mobile network share an IP, so a strict link lockout can briefly lock all of them out.
+
+**D96. Cookie flags are verified over real HTTPS.**
+`npm run test:e2e:tls` runs the production build behind Caddy (`docker compose --profile tls`). It asserts the real `Set-Cookie` headers for the staff session (`__Secure-authjs.session-token`), the graduate session and the partner session: `Secure`, `HttpOnly` and `SameSite=Lax`.
+
+**D97. Auth.js is pinned to `APP_URL`.**
+`AUTH_URL` defaults to `$APP_URL/api/auth`. The HTTPS test found that sign-in links were built from request `Host` / `X-Forwarded-Host` headers, which allowed host-header poisoning of staff magic links. A test with a forged `X-Forwarded-Host` now proves the emailed link still points at `APP_URL`.
+
+**D98. IP keys in application logs.**
+Keys named exactly `ip`, `IP`, `ipAddress`, `remoteAddress`, `x-forwarded-for`, `forwardedFor` or `x-real-ip`, or ending in `Ip`, are redacted. Exact names are used because substring matching also hid harmless fields such as `skipped`. No logger call currently passes an IP at all.

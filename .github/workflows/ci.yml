@@ -53,6 +53,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: End-to-end tests
         run: npm run test:e2e
+      - name: HTTPS cookie tests (Caddy TLS proxy + Mailpit)
+        run: |
+          docker compose up -d mailpit
+          npm run test:e2e:tls
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

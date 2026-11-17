@@ -7,9 +7,9 @@
     "node": ">=20.18"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx server.ts --dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "NODE_ENV=production tsx server.ts",
     "worker": "tsx src/worker/index.ts",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -23,7 +23,8 @@
     "test:coverage": "vitest run --project unit --coverage",
     "test:e2e": "playwright test",
     "check:no-scraping": "tsx scripts/check-no-scraping.ts",
-    "jobs:run": "tsx scripts/run-job.ts"
+    "jobs:run": "tsx scripts/run-job.ts",
+    "test:e2e:tls": "playwright test -c playwright.tls.config.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

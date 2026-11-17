@@ -24,6 +24,28 @@ export const reportFiltersSchema = z.object({
 });
 export type ReportFilters = z.infer<typeof reportFiltersSchema>;
 
+/**
+ * Strict version for anything that is not the interactive page: no silent fallbacks, unknown keys
+ * rejected, size-capped. Used by the export route and the chart-export audit entry.
+ */
+const optId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/).optional();
+const strictMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional();
+export const MAX_FILTERS_JSON = 1000;
+export const reportFiltersStrictSchema = z
+  .object({
+    programId: optId,
+    cohortId: optId,
+    from: strictMonth,
+    to: strictMonth,
+    count: z.array(z.enum(EMPLOYED_STATUSES)).min(1).max(EMPLOYED_STATUSES.length).optional(),
+    inField: z.union([z.boolean(), z.literal("1")]).optional().transform((v) => v === true || v === "1"),
+  })
+  .strict();
+export const cappedStrictFilters = z
+  .unknown()
+  .refine((v) => JSON.stringify(v ?? {}).length <= MAX_FILTERS_JSON, `Filters are larger than ${MAX_FILTERS_JSON} characters`)
+  .pipe(reportFiltersStrictSchema);
+
 /** Filters select whole cohorts (never individual graduates), so results can't be differenced below cohort level. */
 function cohortWhere(f: ReportFilters): Prisma.CohortWhereInput {
   const gd: Prisma.DateTimeNullableFilter = {};
@@ -137,6 +159,6 @@ export async function exportReport(ctx: RequestContext, raw: unknown, format: "c
 /** PNG charts are rendered in the browser; the download is logged here first. */
 export async function logChartExport(ctx: RequestContext, chart: string, raw: unknown) {
   requirePermission(ctx, "report:export");
-  const filters = reportFiltersSchema.parse(raw ?? {});
+  const filters = cappedStrictFilters.parse(raw ?? {});
   await audit(prisma, ctx, { action: "report.export", entityType: "Report", meta: { format: "png", chart: z.string().max(60).parse(chart), filters } });
 }

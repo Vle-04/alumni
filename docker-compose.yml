@@ -41,5 +41,16 @@ services:
       db: { condition: service_healthy }
       web: { condition: service_started }
 
+  # Optional HTTPS front end (not started by default): docker compose --profile tls up tls
+  # UPSTREAM is the app as seen from the container (default: the TLS test server on the host).
+  tls:
+    image: caddy:2.8.4-alpine
+    profiles: ["tls"]
+    ports: ["8443:8443"]
+    environment:
+      UPSTREAM: ${TLS_UPSTREAM:-host.docker.internal:3101}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: [./deploy/Caddyfile.local:/etc/caddy/Caddyfile:ro]
+
 volumes:
   pgdata:

@@ -17,8 +17,11 @@ import { blindIndex, encrypt } from "@/server/crypto";
 import { FakeEmailAdapter } from "./fake-email";
 import { makeCohort, makeGraduate, resetDb } from "./helpers";
 
-const req = (path: string, ip: string) => new NextRequest(`http://localhost:3000${path}`, { headers: { "x-forwarded-for": ip } });
-const call = (route: typeof gradLink, token: string, ip: string, prefix = "/u/") => route(req(`${prefix}${token}`, ip), { params: Promise.resolve({ token }) });
+// The custom server (server.ts) resolves the client IP from the socket and passes it in this header;
+// x-forwarded-for is client-controlled noise as far as the app is concerned.
+const req = (path: string, ip: string | null, spoofedXff = "") =>
+  new NextRequest(`http://localhost:3000${path}`, { headers: { ...(ip ? { "x-alumni-client-ip": ip } : {}), ...(spoofedXff ? { "x-forwarded-for": spoofedXff } : {}) } });
+const call = (route: typeof gradLink, token: string, ip: string | null, prefix = "/u/", spoofedXff = "") => route(req(`${prefix}${token}`, ip, spoofedXff), { params: Promise.resolve({ token }) });
 
 describe("lockout after repeated failures", () => {
   let fake: FakeEmailAdapter;
@@ -38,6 +41,21 @@ describe("lockout after repeated failures", () => {
     expect(locked.status).toBe(429);
     expect(Number(locked.headers.get("retry-after"))).toBeGreaterThan(0);
     expect((await call(gradLink, good, "2.2.2.2")).status).toBe(303); // other IPs unaffected
+  });
+
+  it("AUDIT 15: a rotated / spoofed x-forwarded-for does NOT reset the lockout", async () => {
+    const g = await makeGraduate((await makeCohort()).id);
+    const good = createGraduateToken(g, "profile");
+    for (let i = 0; i < 10; i++) await call(gradLink, `bad${i}`, "5.5.5.5", "/u/", `10.0.0.${i}, 172.16.0.${i}`);
+    expect((await call(gradLink, good, "5.5.5.5", "/u/", "8.8.8.8")).status).toBe(429);
+    expect((await call(gradLink, good, "5.5.5.5", "/u/", "")).status).toBe(429);
+  });
+
+  it("AUDIT 15: requests with no usable client IP are refused (no shared 'unknown' bucket)", async () => {
+    const g = await makeGraduate((await makeCohort()).id);
+    const r = await call(gradLink, createGraduateToken(g, "profile"), null, "/u/", "1.2.3.4");
+    expect(r.status).toBe(400);
+    expect(await prisma.rateLimitBucket.count({ where: { key: { contains: "unknown" } } })).toBe(0);
   });
 
   it("graduate links: plain rate limit of 60 requests per 15 minutes per IP", async () => {
@@ -85,5 +103,30 @@ describe("lockout after repeated failures", () => {
       for (let i = 0; i < 3; i++) await requestOtp(ctx, "export_data");
       await expect(requestOtp(ctx, "export_data")).rejects.toBeInstanceOf(RateLimitError);
     });
+  });
+});
+
+describe("AUDIT 22: lockout limits are admin-configurable, validated and audited", () => {
+  beforeEach(resetDb);
+
+  it("rejects unsafe values, audits changes, and the lockout uses the configured limit", async () => {
+    const { updateSettings } = await import("@/server/services/settings-admin");
+    const { staff } = await import("./helpers");
+    const admin = await staff("ADMIN");
+    const base = { gradLink: { limit: 10, windowMinutes: 15 }, partnerLink: { limit: 10, windowMinutes: 15 }, otp: { limit: 10, windowMinutes: 60 } };
+    await expect(updateSettings(admin, "security", { ...base, gradLink: { limit: 2, windowMinutes: 15 } })).rejects.toThrow(); // below minimum
+    await expect(updateSettings(admin, "security", { ...base, otp: { limit: 10, windowMinutes: 5 } })).rejects.toThrow(); // window too short
+    await expect(updateSettings(admin, "security", { ...base, extra: 1 })).rejects.toThrow(); // strict
+    await expect(updateSettings(await staff("CAREER_SERVICES"), "security", base)).rejects.toThrow(/permission/);
+
+    await updateSettings(admin, "security", { ...base, gradLink: { limit: 20, windowMinutes: 15 } });
+    expect(await prisma.auditLog.count({ where: { action: "settings.update", entityId: "security" } })).toBe(1);
+
+    const g = await makeGraduate((await makeCohort()).id);
+    const good = createGraduateToken(g, "profile");
+    for (let i = 0; i < 15; i++) await call(gradLink, `bad${i}`, "6.6.6.6");
+    expect((await call(gradLink, good, "6.6.6.6")).status).toBe(303); // 15 < 20: not locked yet
+    for (let i = 15; i < 20; i++) await call(gradLink, `bad${i}`, "6.6.6.6");
+    expect((await call(gradLink, good, "6.6.6.6")).status).toBe(429);
   });
 });

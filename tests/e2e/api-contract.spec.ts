@@ -16,6 +16,11 @@ test("GET /api/reports/export: 401 without a session; CSV and PDF with one", asy
   expect(csv.headers()["content-type"]).toContain("text/csv");
   expect(csv.headers()["content-disposition"]).toBe('attachment; filename="alumni-outcomes.csv"');
   expect((await csv.text()).split("\n")[0]).toBe("section,group,measure,value");
+  // AUDIT 18: invalid filters are rejected at the route, even with a valid session.
+  for (const bad of ["?from=garbage", "?count=hacked", "?evil=1", "?format=xlsx"]) {
+    const r = await page.request.get(`/api/reports/export${bad}`);
+    expect(r.status(), bad).toBe(422);
+  }
   const pdf = await page.request.get("/api/reports/export?format=pdf");
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
   expect((await pdf.body()).subarray(0, 4).toString()).toBe("%PDF");

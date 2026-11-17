@@ -5,6 +5,7 @@
 import { headers } from "next/headers";
 import { prisma } from "./db";
 import { blindIndex } from "./crypto";
+import { clientIp } from "./client-ip";
 
 export async function checkRateLimit(rawKey: string, limit: number, windowSeconds: number): Promise<boolean> {
   const key = rawKey.includes("@") ? rawKey.replace(/[^:]+@[^:]+/, (m) => blindIndex(m).slice(0, 24)) : rawKey;
@@ -17,7 +18,7 @@ export async function checkRateLimit(rawKey: string, limit: number, windowSecond
   return (rows[0]?.count ?? 0) <= limit;
 }
 
-export async function clientIp(): Promise<string> {
-  const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
+/** Client IP for server actions (via the request headers). Null = unknown → callers refuse. */
+export async function requestClientIp(): Promise<string | null> {
+  return clientIp(await headers());
 }

@@ -19,14 +19,14 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
   const m = await getMatchForGraduate(ctx, id).catch((e) => (e instanceof NotFoundError ? null : Promise.reject(e)));
   if (!m) notFound();
   const o = m.opening;
-  async function interested(formData?: FormData) {
+  async function interested(...args: [_formData?: FormData]) {
     "use server";
-    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    parseArgs(z.tuple([A.form.optional()]), args);
     await respondToMatchAction(id, "interested");
   }
-  async function notInterested(formData?: FormData) {
+  async function notInterested(...args: [_formData?: FormData]) {
     "use server";
-    parseArgs(z.tuple([A.form.optional()]), [formData]);
+    parseArgs(z.tuple([A.form.optional()]), args);
     await respondToMatchAction(id, "not_interested");
   }
   return (

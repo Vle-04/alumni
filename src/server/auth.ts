@@ -14,6 +14,11 @@ import { audit } from "./audit";
 import { logger } from "./logger";
 import type { Role } from "@/domain/rbac/permissions";
 
+// Pin Auth.js to the configured public URL. Without this (trustHost: true), sign-in links in emails
+// are built from request Host / X-Forwarded-Host headers — an attacker could make a staff member's
+// magic link point at another domain (host-header poisoning). See DECISIONS D97.
+if (process.env.APP_URL && !process.env.AUTH_URL) process.env.AUTH_URL = `${process.env.APP_URL.replace(/\/$/, "")}/api/auth`;
+
 function providers(): Provider[] {
   const list: Provider[] = [
     {
