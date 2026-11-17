@@ -20,6 +20,12 @@ export async function resolveCompany(db: Db, rawName: string): Promise<string> {
   if (alias) return alias.companyId;
 
   const existing = await db.company.findMany({ select: { id: true, canonicalName: true, aliases: { select: { alias: true } } } });
+  // A company created without an alias row (e.g. by an admin) still counts as the same company.
+  const sameKey = existing.find((c) => normalizeCompanyName(c.canonicalName) === key);
+  if (sameKey) {
+    await db.companyAlias.upsert({ where: { alias: key }, create: { alias: key, companyId: sameKey.id }, update: {} });
+    return sameKey.id;
+  }
   const company = await db.company.create({ data: { canonicalName: await uniqueCanonical(db, name), aliases: { create: { alias: key } } } });
   const matches = findSimilarCompanies(
     name,

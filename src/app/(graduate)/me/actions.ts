@@ -61,3 +61,10 @@ export async function requestNewLinkAction(_p: { status?: string }, fd: FormData
   const r = await self.requestNewLink(String(fd.get("email") ?? ""), await clientIp());
   return { status: r === "ok" ? "sent" : "rate_limited" };
 }
+
+export async function respondToMatchAction(matchId: string, response: "interested" | "not_interested") {
+  const { respondToMatch } = await import("@/server/services/placement");
+  const r = fix(await runAction(async () => { await respondToMatch(await ctx(), matchId, response); return null; }));
+  revalidatePath(`/me/matches/${matchId}`);
+  return r;
+}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireStaffPage } from "@/server/session";
 import { listCompanies, listMergeSuggestions } from "@/server/services/companies";
 import { can } from "@/domain/rbac/permissions";
@@ -36,7 +37,7 @@ export default async function CompaniesPage() {
       <Table caption="All companies">
         <thead><tr><Th>Company</Th><Th>Industry</Th><Th>Partner</Th><Th>Employment records</Th><Th>Openings</Th></tr></thead>
         <tbody>{companies.map((c) => (
-          <tr key={c.id}><Td className="font-medium">{c.canonicalName}</Td><Td>{c.industry ?? "—"}</Td><Td>{c.isPartner ? <Badge tone="accent">Partner</Badge> : "—"}</Td><Td>{c._count.records}</Td><Td>{c._count.openings}</Td></tr>
+          <tr key={c.id}><Td className="font-medium"><Link className="text-accent underline" href={`/companies/${c.id}`}>{c.canonicalName}</Link></Td><Td>{c.industry ?? "—"}</Td><Td>{c.isPartner ? <Badge tone="accent">Partner</Badge> : "—"}</Td><Td>{c._count.records}</Td><Td>{c._count.openings}</Td></tr>
         ))}</tbody>
       </Table>
     </>

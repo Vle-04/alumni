@@ -11,11 +11,14 @@ export default async function StaffLayout({ children }: { children: React.ReactN
     { href: "/dashboard", label: t("nav.dashboard"), show: can(role, "dashboard:read") },
     { href: "/graduates", label: t("nav.graduates"), show: can(role, "graduate:read") },
     { href: "/cohorts", label: t("nav.cohorts"), show: can(role, "cohort:write") },
+    { href: "/openings", label: t("nav.openings"), show: can(role, "opening:read") },
+    { href: "/referrals", label: t("nav.referrals"), show: can(role, "referral:read") },
     { href: "/import", label: t("nav.import"), show: can(role, "graduate:import") },
     { href: "/companies", label: t("nav.companies"), show: can(role, "company:read") },
     { href: "/surveys", label: t("nav.surveys"), show: can(role, "survey:read") },
     { href: "/reports", label: t("nav.reports"), show: can(role, "report:read") },
     { href: "/admin/users", label: t("nav.users"), show: can(role, "user:manage") },
+    { href: "/admin/skills", label: t("nav.skills"), show: can(role, "skills:manage") },
   ].filter((i) => i.show);
 
   async function doSignOut() {

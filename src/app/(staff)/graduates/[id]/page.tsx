@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireStaffPage } from "@/server/session";
 import { getGraduateDetail } from "@/server/services/graduates";
+import { openingsForGraduate } from "@/server/services/placement";
+import { NotifyButton } from "../../openings/[id]/NotifyButton";
 import { can } from "@/domain/rbac/permissions";
 import { EMPLOYMENT_STATUSES, EMPLOYMENT_TYPES, ROLE_CATEGORIES, SALARY_BANDS } from "@/domain/enums";
 import { enumLabel, t } from "@/i18n";
@@ -17,6 +19,7 @@ export default async function GraduateDetail({ params }: { params: Promise<{ id:
   const ctx = await requireStaffPage("graduate:read");
   const g = await getGraduateDetail(ctx, id);
   const role = ctx.actor.role;
+  const matches = can(role, "opening:read") ? await openingsForGraduate(ctx, id) : null;
   const opt = <T extends string>(group: Parameters<typeof enumLabel>[0], vals: readonly T[]) => vals.map((v) => ({ value: v, label: enumLabel(group, v) }));
   const activeConsents = new Set(g.consents.filter((c) => !c.revokedAt).map((c) => c.purpose));
 
@@ -73,6 +76,27 @@ export default async function GraduateDetail({ params }: { params: Promise<{ id:
             <Card title="Add employment record">
               <AddRecordForm action={addRecordAction.bind(null, g.id)} statuses={opt("status", EMPLOYMENT_STATUSES.filter((s) => s !== "unknown"))}
                 roles={opt("role", ROLE_CATEGORIES)} salaryBands={opt("salary", SALARY_BANDS)} types={opt("employmentType", EMPLOYMENT_TYPES)} />
+            </Card>
+          )}
+
+          {matches && (
+            <Card title={`Matching openings (${matches.ranked.length})`}>
+              {matches.ranked.length === 0 ? (
+                <p className="text-sm text-muted">{matches.eligibilityProblems.length ? `Not matched: ${matches.eligibilityProblems.join(" ")}` : "No open opening fits right now."}</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {matches.ranked.slice(0, 8).map((m) => (
+                    <li key={m.openingId} className="flex flex-wrap items-start justify-between gap-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <Link className="font-medium text-accent underline" href={`/openings/${m.openingId}`}>{m.title}</Link> <span className="text-sm text-muted">· {m.companyName}</span>
+                        <p className="text-xs text-muted">{m.explanation.join(" ")}</p>
+                      </div>
+                      <span className="text-lg font-semibold">{m.score}</span>
+                      {m.notified ? <Badge>Notified</Badge> : can(role, "referral:write") && <NotifyButton openingId={m.openingId} graduateId={g.id} name={g.fullName} />}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           )}
 

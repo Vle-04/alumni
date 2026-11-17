@@ -4,6 +4,7 @@ import { confirmPrompt } from "@/domain/surveys/form";
 import { enumLabel, t } from "@/i18n";
 import { requireGraduatePage } from "@/server/graduate-session";
 import { getSelfServiceView } from "@/server/services/self-service";
+import { listMatchesForGraduate } from "@/server/services/placement";
 import { Card, Button } from "@/components/ui";
 import { SurveyForm } from "./SurveyForm";
 import { ChangeEmail, ConsentForm, PreferencesForm } from "./MeForms";
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "My career update" };
 
 export default async function MePage() {
   const ctx = await requireGraduatePage();
-  const v = await getSelfServiceView(ctx);
+  const [v, matches] = await Promise.all([getSelfServiceView(ctx), listMatchesForGraduate(ctx)]);
   return (
     <div className="space-y-6">
       <div>
@@ -26,6 +27,17 @@ export default async function MePage() {
           {t("grad.surveyTitle", { months: s.milestone })} →
         </Link>
       ))}
+
+      {matches.length > 0 && (
+        <Card title={t("match.yourMatches")}>
+          <ul className="divide-y divide-border">{matches.map((m) => (
+            <li key={m.id}><Link href={`/me/matches/${m.id}`} className="flex min-h-11 items-center justify-between gap-2 py-2">
+              <span><span className="font-medium">{m.opening.title}</span> <span className="text-sm text-muted">· {m.opening.company.canonicalName}</span></span>
+              <span className="text-sm text-muted">{m.response === "interested" ? "Interested" : m.response === "not_interested" ? "Not interested" : "→"}</span>
+            </Link></li>
+          ))}</ul>
+        </Card>
+      )}
 
       <Card title={t("grad.currentStatus")}>
         <p className="mb-4">{v.last ? <>{enumLabel("status", v.last.status)}{v.last.companyName && <> · {v.last.companyName}</>}{v.last.roleTitle && <> · {v.last.roleTitle}</>}</> : t("grad.nothingYet")}</p>

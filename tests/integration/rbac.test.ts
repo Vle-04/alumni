@@ -15,8 +15,12 @@ import * as users from "@/server/services/users";
 import * as importSvc from "@/server/services/import";
 import * as surveys from "@/server/services/surveys";
 import * as selfService from "@/server/services/self-service";
+import * as openings from "@/server/services/openings";
+import * as placement from "@/server/services/placement";
+import * as partner from "@/server/services/partner";
+import * as skillsAdmin from "@/server/services/skills-admin";
 
-const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService };
+const modules: Record<string, Record<string, unknown>> = { graduates, employment, companies, cohorts, users, import: importSvc, surveys, selfService, openings, placement, partner, skillsAdmin };
 
 /** Functions Leadership MAY call: they return aggregates only. */
 export const AGGREGATE_ONLY = new Set(["cohorts.listCohorts", "cohorts.listPrograms"]);
@@ -35,6 +39,11 @@ export const INTERNAL = new Set([
   "selfService.requestNewLink",
   "selfService.unsubscribeByToken",
   "selfService.consumeOtp",
+  "openings.setOpeningSkills",
+  // Partner token helpers (pure signing / verification against the partner's own record).
+  "partner.partnerLink",
+  "partner.partnerSessionValue",
+  "partner.resolvePartner",
 ]);
 
 describe("Leadership/Marketing cannot reach individual-level services", async () => {

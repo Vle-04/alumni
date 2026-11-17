@@ -14,6 +14,14 @@ const surveysSchema = z.object({
   quietHours: z.object({ startHour: z.number().int().min(0).max(23), endHour: z.number().int().min(0).max(23) }),
 });
 
+const matchingSchema = z.object({
+  weights: z.object({ skills: z.number().min(0).max(100), role: z.number().min(0).max(100), location: z.number().min(0).max(100), boost: z.number().min(0).max(100) })
+    .refine((w) => w.skills + w.role + w.location + w.boost === 100, "Weights must add up to 100"),
+  recentGraduateDays: z.number().int().min(0).max(365),
+  longSearchDays: z.number().int().min(0).max(365),
+  longSearchFullDays: z.number().int().min(1).max(730),
+});
+
 export const SETTING_DEFAULTS = {
   surveys: {
     skipWindowDays: 14,
@@ -22,9 +30,15 @@ export const SETTING_DEFAULTS = {
     reminderOffsetsDays: [4, 10],
     quietHours: { startHour: 21, endHour: 8 },
   } satisfies z.infer<typeof surveysSchema>,
+  matching: {
+    weights: { skills: 60, role: 15, location: 15, boost: 10 },
+    recentGraduateDays: 90,
+    longSearchDays: 60,
+    longSearchFullDays: 180,
+  } satisfies z.infer<typeof matchingSchema>,
 };
 
-export const SETTING_SCHEMAS = { surveys: surveysSchema } as const;
+export const SETTING_SCHEMAS = { surveys: surveysSchema, matching: matchingSchema } as const;
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type Settings = typeof SETTING_DEFAULTS;
 

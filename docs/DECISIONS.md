@@ -180,6 +180,60 @@ It uses CSS `:has()`. Browsers without `:has()` show every question, and the ser
 **D43. Response rate definition.**
 (completed + skipped because of a recent self-update) ÷ surveys that went out (sent + completed + bounced + skipped). Surveys that are scheduled, queued, missed or cancelled are not in the denominator.
 
+## Placement & referrals (Phase 3)
+
+**D44. Matching is a pure function with explanations.**
+`src/domain/matching/match.ts` is deterministic. Ties are broken by score, then longest searching first, then id. Each match lists, in plain language, every factor that affected its score.
+- **Filters:** status is `searching` (or the graduate chose "open to offers"); `job_matching` consent; location fits; every must-have skill present.
+- **Score:** 60 skills + 15 role + 15 location + 10 boost. Admins can change the weights in Settings; they must add up to 100.
+- **What graduates see:** match emails explain only skills and location, never the internal boost.
+
+**D45. Edge cases in the score.**
+- An opening with no skills listed gives full skill credit and says so.
+- A graduate with no role preference gets half role credit (0.5), so having no preference is neither rewarded nor punished.
+- A remote role counts as compatible for everyone; on-site-only people get a slightly lower location fit (0.7).
+- On-site and hybrid roles need the same city, or the graduate must be open to relocating (fit 0.5).
+- Graduates whose status is "unknown" are **not** matched until they tell us they're searching. That's privacy-protective: the brief requires a status of searching or an opt-in.
+
+**D46. Matching reads only a fixed list of fields.**
+The list is `MATCH_CANDIDATE_FIELDS`, and a unit test fails if it ever includes anything that looks like a protected attribute. The database adapter builds candidates only from those fields.
+
+**D47. Only the graduate can mark interest; sharing is gated in code.**
+- Only the graduate can move a referral to `graduate_interested`, by clicking Interested.
+- "Not interested" withdraws the referral. The graduate can still change their mind until they've been referred.
+- Moving to `referred` or any later stage requires **both** the Interested click **and** active `share_with_partners` consent (`checkTransition`).
+- The partner portal re-checks both on **every read** (`partnerCandidate`). Revoking consent hides details immediately, and each disclosure is audited as `contact.read` by the partner.
+
+**D48. What partners see.**
+Partners only see referrals that actually reached `referred`; earlier stages stay internal. When the gate allows it, they see name, email, LinkedIn URL (as text), skills and preferred roles. They never see phone, salary or status history.
+
+**D49. Pipeline rules.**
+- `hired` only follows `offer`, and is final.
+- Staff can skip forward once interest exists, step back one stage to fix mistakes, and reopen a rejected or withdrawn referral up to its previous stage.
+- Every move is a time-stamped `ReferralTransition` plus an audit entry.
+
+**D50. Hire records.**
+Moving to `hired` immediately creates an `EmploymentRecord`: source `referral_hire`, prefilled with the opening's company and title, not yet verified. That way the outcomes report updates even if staff skip the prompt.
+The prompt lets staff confirm (marks the record verified) or correct it (appends a verified record that supersedes the first).
+
+**D51. Referral metrics come from transition history.**
+- **Conversion per stage:** referrals that reached stage N+1 ÷ referrals that reached stage N.
+- **Days to hire:** measured from `referred` to `hired`.
+- **Hires per company:** partners are flagged separately.
+
+**D52. Drag and drop has an accessible alternative.**
+dnd-kit supports pointer, touch and keyboard, with spoken announcements. Every card also has a "Move to…" menu listing only the moves the server allows.
+
+**D53. Partner portal links.**
+Signed, 90 days, versioned per contact; revoke and reissue from the company page. The link starts an 8-hour session.
+Staff copy the link and send it themselves: the outbox only emails graduates, and partner links are not personal data about graduates.
+
+**D54. Synonym merges.**
+Admins can merge one skill into another. Graduates keep the higher self-rated level, openings keep the higher weight and the must-have flag, and the old name becomes a synonym.
+
+**D55. Match emails respect check-in unsubscribes and quiet hours.**
+Graduates can still see their matches on `/me`.
+
 ## Planned decisions for later phases (recorded now, implemented in their phase)
 
 - **Status at 6 or 12 months (Phase 4).** We use the latest record reported between the milestone date minus 90 days and the milestone date plus 45 days; otherwise the status is unknown and counted as unknown.

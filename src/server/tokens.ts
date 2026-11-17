@@ -47,6 +47,7 @@ export async function resolveGraduateToken(token: string, purposes: readonly Tok
   const r = verifyToken(token, key(), now, purposes);
   if (!r.ok) return { ok: false, reason: r.reason === "expired" ? "expired" : "invalid" };
   if (r.payload.p === "unsubscribe") return { ok: true, graduateId: r.payload.sub, purpose: r.payload.p, version: r.payload.v };
+  if (r.payload.p === "session" && r.payload.ref === "partner") return { ok: false, reason: "invalid" };
   const g = await prisma.graduate.findUnique({ where: { id: r.payload.sub }, select: { profileTokenVersion: true, anonymizedAt: true } });
   if (!g || g.anonymizedAt) return { ok: false, reason: "invalid" };
   if (g.profileTokenVersion !== r.payload.v) return { ok: false, reason: "revoked" };

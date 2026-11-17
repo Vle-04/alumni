@@ -311,19 +311,33 @@ async function main() {
     const path: ReferralStatus[] = target === "rejected" || target === "withdrawn"
       ? [...PIPE.slice(0, int(2, 4)), target]
       : PIPE.slice(0, PIPE.indexOf(target) + 1);
-    let at = new Date(Math.max(grad.since.getTime(), addDays(NOW, -150).getTime()));
+    // Spread referral start dates over the last ~4 months; closed/hired ones started earlier.
+    const startDaysAgo = ["hired", "rejected", "withdrawn", "offer"].includes(target) ? int(45, 130) : int(3, 70);
+    let at = new Date(Math.max(grad.since.getTime(), addDays(NOW, -startDaysAgo).getTime()));
     const ref = await prisma.referral.create({ data: { openingId: opening.id, graduateId: grad.id, referredById: pick(staffIds), status: path.at(-1)!, createdAt: at, statusChangedAt: at } });
     let prev: ReferralStatus | null = null;
     for (const s of path) {
-      at = addDays(at, prev === null ? 0 : int(2, 12));
+      at = addDays(at, prev === null ? 0 : int(1, 9));
       if (at > NOW) at = addDays(NOW, -1);
       await prisma.referralTransition.create({ data: { referralId: ref.id, fromStatus: prev, toStatus: s, actorId: pick(staffIds), at } });
       prev = s;
     }
     await prisma.referral.update({ where: { id: ref.id }, data: { statusChangedAt: at } });
-    if (path.includes("graduate_interested")) {
-      await prisma.matchNotification.create({ data: { openingId: opening.id, graduateId: grad.id, sentById: pick(staffIds), sentAt: ref.createdAt, score: int(55, 92), response: "interested", respondedAt: addDays(ref.createdAt, 1) } });
+    // Consistent with the sharing rule: anyone referred to a partner clicked Interested and
+    // agreed to job matching and partner sharing.
+    const purposes: ("job_matching" | "share_with_partners")[] = ["job_matching", ...(path.includes("referred") ? (["share_with_partners"] as const) : [])];
+    for (const purpose of purposes) {
+      if (!(await prisma.consent.findFirst({ where: { graduateId: grad.id, purpose, revokedAt: null } }))) {
+        await prisma.consent.create({ data: { graduateId: grad.id, purpose, policyVersion: POLICY, source: "seed", grantedAt: ref.createdAt } });
+      }
     }
+    await prisma.matchNotification.create({
+      data: {
+        openingId: opening.id, graduateId: grad.id, sentById: pick(staffIds), sentAt: ref.createdAt, score: int(55, 92),
+        response: path.includes("graduate_interested") ? "interested" : target === "withdrawn" ? "not_interested" : null,
+        respondedAt: path.includes("graduate_interested") || target === "withdrawn" ? addDays(ref.createdAt, 1) : null,
+      },
+    });
     if (target === "hired") {
       const rec = await prisma.employmentRecord.create({
         data: { graduateId: grad.id, status: "employed_full_time", companyId: opening.companyId, roleTitle: opening.title, inField: true, startDate: addDays(at, 14), employmentType: "full_time", source: "referral_hire", reportedAt: at, verifiedById: careers.id },

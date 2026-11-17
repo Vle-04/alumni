@@ -10,7 +10,7 @@ Tracks graduate career outcomes for the Academy:
 
 Graduates report their own status. **The system never scrapes LinkedIn or any other site.**
 
-> **Status:** Phases 1 (Foundation) and 2 (Surveys) are complete. Placement, reporting and hardening come in Phases 3–5; see [Roadmap](#roadmap).
+> **Status:** Phases 1–3 (Foundation, Surveys, Placement) are complete. Reporting and hardening come in Phases 4–5; see [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -86,6 +86,11 @@ Run any job by hand: `npm run jobs:run -- survey-tick`. Failed emails appear und
 - **If a link has expired or was revoked,** they get a "send me a new link" page. It never reveals whether an email is registered.
 - **Staff can** revoke all of a graduate's links, or email them a fresh one, from the graduate page.
 
+## Placement in one paragraph
+
+Career Services creates openings, or partners submit them through their portal link into a review queue. Each opening lists ranked candidates with a 0–100 score and a plain-language explanation, for example: "Matches 4 of 5 required skills; missing: Docker. Remote OK." Staff click **Notify**, and the graduate gets an email with **I'm interested / Not interested**.
+After *Interested*, plus the graduate's `share_with_partners` consent, the referral can move to *Referred*; only then does the partner see the candidate's details. The rule is enforced on the server and re-checked on every read. Moving a card to *Hired* records the job automatically and asks staff to confirm it.
+
 ## Architecture
 
 ```
@@ -122,6 +127,8 @@ More detail: [docs/DECISIONS.md](docs/DECISIONS.md).
 2. ✅ **Surveys**
    - Scheduler, outbox with idempotent email, signed personal links
    - Survey and self-update forms, one-time codes, reminders, quiet hours, dead-letter view, response rates
-3. **Placement**: openings, matching engine with explanations, notifications, referral pipeline, partner portal
+3. ✅ **Placement**
+   - Openings with a review queue, a synonym-aware matching engine with explanations, "You might be a fit" emails with Interested / Not interested
+   - Referral board and table with metrics, hire → employment record, partner portal with the sharing check
 4. **Reporting**: metrics, outcomes dashboard, charts, exports, small-group suppression
 5. **Hardening**: consent and deletion flows, retention job, security and accessibility review, full docs
