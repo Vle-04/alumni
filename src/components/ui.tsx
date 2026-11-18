@@ -50,7 +50,8 @@ export function describedBy(id: string, opts: { help?: boolean; error?: unknown 
 
 export function Card({ title, actions, children, className }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cn("rounded-lg border border-border bg-surface p-4 sm:p-5", className)}>
+    // min-w-0: inside a grid/flex parent, a wide table must scroll inside the card, not stretch the page.
+    <section className={cn("min-w-0 rounded-lg border border-border bg-surface p-4 sm:p-5", className)}>
       {(title || actions) && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           {title && <h2 className="text-base font-semibold">{title}</h2>}
@@ -94,7 +95,8 @@ export function EmptyState({ children }: { children: ReactNode }) {
 export function Table({ caption, children, className }: { caption: string; children: ReactNode; className?: string }) {
   return (
     // Focusable region: a table wider than the screen must be scrollable with the keyboard too (WCAG 2.1.1).
-    <div role="region" aria-label={caption} tabIndex={0} className={cn("overflow-x-auto rounded-lg border border-border bg-surface", className)}>
+    // `relative` keeps visually-hidden (absolute) text like the caption inside the scroller, not stretching the page.
+    <div role="region" aria-label={caption} tabIndex={0} className={cn("relative overflow-x-auto rounded-lg border border-border bg-surface", className)}>
       <table className="w-full border-collapse text-sm">
         <caption className="sr-only">{caption}</caption>
         {children}

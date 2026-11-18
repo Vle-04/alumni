@@ -46,6 +46,43 @@ test.describe("staff pages", () => {
   });
 });
 
+/**
+ * CI found a table that overflowed only on Linux (wider fonts). A phone-width viewport forces
+ * the overflow on every machine, so this fails locally too if a scroll container isn't focusable.
+ */
+test.describe("narrow viewport: every horizontally scrollable region works with the keyboard", () => {
+  test.use({ viewport: { width: 360, height: 740 } });
+  test.beforeEach(async ({ context, baseURL }) => loginAs(context, "admin@academy.example", baseURL!));
+  for (const path of ["/surveys", "/graduates", "/referrals", "/referrals?view=table", "/reports", "/admin/users", "/companies"]) {
+    test(`overflow + a11y: ${path}`, async ({ page }) => {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true))); // chart data tables too
+      const scrollers = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("main *")]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1 && ["auto", "scroll"].includes(getComputedStyle(el).overflowX))
+          .map((el, i) => (el.setAttribute("data-scroller", String(i)), { i: String(i), tabIndex: el.tabIndex, role: el.getAttribute("role"), name: el.getAttribute("aria-label") })),
+      );
+      // Wide content scrolls inside its own region; the page itself never scrolls sideways.
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), `${path}: page scrolls horizontally at 360px`).toBeLessThanOrEqual(0);
+      // The narrow viewport must actually force an overflow, or this test proves nothing.
+      expect(scrollers.length, `${path}: expected at least one horizontally scrollable region at 360px`).toBeGreaterThan(0);
+      for (const s of scrollers) {
+        expect(s, `${path}: scrollable region must be a focusable, named region`).toMatchObject({ tabIndex: 0, role: "region", name: expect.stringMatching(/\S/) });
+        const el = page.locator(`[data-scroller="${s.i}"]`);
+        await el.focus();
+        await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab"); // arrive by keyboard so :focus-visible applies
+        await expect(el).toBeFocused();
+        const outline = await el.evaluate((n) => { const st = getComputedStyle(n); return st.outlineStyle !== "none" && parseFloat(st.outlineWidth) > 0; });
+        expect(outline, `${path}: focused scroll region shows a focus outline`).toBe(true);
+        await page.keyboard.press("ArrowRight"); await page.keyboard.press("ArrowRight");
+        await expect.poll(() => el.evaluate((n) => n.scrollLeft), { message: `${path}: arrow keys scroll the region` }).toBeGreaterThan(0);
+      }
+      await axe(page, `${path} @360px`);
+    });
+  }
+});
+
 test("a11y + CSP: login, privacy, link-expired", async ({ page }) => {
   const csp = watchCsp(page);
   for (const path of ["/login", "/privacy", "/link-expired?r=expired"]) {

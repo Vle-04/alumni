@@ -85,7 +85,7 @@ export function ReferralBoard({ cards }: { cards: BoardCard[] }) {
           onDragEnd: ({ over }) => (over ? `Dropped in ${enumLabel("referral", String(over.id))}.` : "Cancelled."),
           onDragCancel: () => "Move cancelled.",
         } }}>
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div role="region" aria-label="Referral stages" tabIndex={0} className="relative flex gap-3 overflow-x-auto pb-4">
           {COLUMNS.map((s) => <Column key={s} status={s} cards={optimistic.filter((c) => c.status === s)} onMove={move} pending={pending} />)}
         </div>
       </DndContext>

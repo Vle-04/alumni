@@ -34,7 +34,7 @@ export function ChartCard({ id, title, definition, table, children, onExport, no
       <div ref={ref}>{children}</div>
       <details className="mt-2">
         <summary className="cursor-pointer text-sm text-accent">Show data table</summary>
-        <div role="region" aria-label={table.caption} tabIndex={0} className="mt-2 overflow-x-auto">
+        <div role="region" aria-label={table.caption} tabIndex={0} className="relative mt-2 overflow-x-auto">
           <table className="w-full text-sm">
             <caption className="sr-only">{table.caption}</caption>
             <thead><tr>{table.columns.map((c) => <th key={c} scope="col" className="border-b border-border px-2 py-1 text-left text-xs text-muted">{c}</th>)}</tr></thead>

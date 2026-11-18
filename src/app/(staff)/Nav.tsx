@@ -8,7 +8,7 @@ export interface NavItem { href: string; label: string; show?: boolean }
 export function Nav({ items }: { items: NavItem[] }) {
   const path = usePathname();
   return (
-    <nav aria-label="Main" className="overflow-x-auto px-2 pb-2">
+    <nav aria-label="Main" className="relative overflow-x-auto px-2 pb-2">
       <ul className="flex gap-1 lg:flex-col">
         {items.map((i) => {
           const active = path === i.href || path.startsWith(`${i.href}/`);

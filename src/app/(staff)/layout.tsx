@@ -42,7 +42,7 @@ export default async function StaffLayout({ children }: { children: React.ReactN
           <button className="text-sm text-muted underline" type="submit">{t("nav.signOut")}</button>
         </form>
       </header>
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">{children}</main>
+      <main id="main" className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-6 sm:px-6">{children}</main>
     </div>
   );
 }

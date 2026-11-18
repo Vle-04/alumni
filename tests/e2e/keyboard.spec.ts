@@ -18,7 +18,9 @@ async function tabThrough(page: Page, label: string) {
     const els = [...document.querySelectorAll<HTMLElement>(sel)].filter((el) => {
       const r = el.getBoundingClientRect();
       const st = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && !el.closest("[inert]") && !el.classList.contains("skip-link");
+      // Content of a closed <details> has a layout box in Chrome but is not focusable until opened.
+      const inClosedDetails = !!el.closest("details:not([open])") && !(el.tagName === "SUMMARY" && el.parentElement?.tagName === "DETAILS");
+      return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && !el.closest("[inert]") && !el.classList.contains("skip-link") && !inClosedDetails;
     });
     els.forEach((el, i) => el.setAttribute("data-kb", String(i)));
     return els.length;
@@ -75,20 +77,28 @@ test.describe("staff pages are fully keyboard-navigable", () => {
     }
   });
 
+  /**
+   * Root cause of the CI timeout: Linux Chromium commits a closed <select> on ArrowDown (macOS doesn't),
+   * so the card had already moved and the later selectOption("Interviewing") waited for an option that
+   * no longer existed. Fix: the test creates its own card (no dependence on seed data or earlier tests)
+   * and uses type-ahead, which behaves identically on both platforms.
+   */
   test("referral board: a card can be moved with the keyboard only", async ({ page }) => {
-    const r = await db.referral.findFirstOrThrow({ where: { status: "referred", graduate: { anonymizedAt: null, consents: { some: { purpose: "share_with_partners", revokedAt: null } } } }, include: { graduate: true } });
+    const tag = `kb${Date.now().toString(36)}`;
+    const staff = await db.user.findFirstOrThrow({ where: { role: "CAREER_SERVICES" } });
+    const company = await db.company.findFirstOrThrow({ where: { isPartner: true } });
+    const opening = await db.opening.create({ data: { companyId: company.id, title: `Keyboard test ${tag}`, description: "e2e", roleCategory: "frontend", remoteMode: "remote", status: "open" } });
+    const graduate = await db.graduate.create({ data: { cohortId: (await db.cohort.findFirstOrThrow()).id, fullName: `Keyboard Grad ${tag}`, currentStatus: "searching", searchingSince: new Date(),
+      consents: { create: [{ purpose: "job_matching", policyVersion: "test", source: "e2e" }, { purpose: "share_with_partners", policyVersion: "test", source: "e2e" }] } } });
+    await db.matchNotification.create({ data: { openingId: opening.id, graduateId: graduate.id, sentById: staff.id, score: 80, response: "interested", respondedAt: new Date() } });
+    const r = await db.referral.create({ data: { openingId: opening.id, graduateId: graduate.id, referredById: staff.id, status: "referred" } });
+
     await page.goto("/referrals");
-    const select = page.getByLabel(`Move ${r.graduate.fullName} to`);
-    const target = (await select.locator("option").nth(1).getAttribute("value"))!; // first real stage after "Move to…"
-    const status = async () => (await db.referral.findUniqueOrThrow({ where: { id: r.id } })).status;
+    const select = page.getByLabel(`Move ${graduate.fullName} to`);
     await select.focus();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("Enter");
-    // Linux Chromium commits a closed <select> on ArrowDown; macOS opens a popup instead.
-    // Only if the keys didn't commit, pick the same option the way a headless keyboard user would.
-    const moved = await expect.poll(status, { timeout: 3000 }).toBe(target).then(() => true, () => false);
-    if (!moved) await select.selectOption(target);
-    await expect.poll(status).toBe(target);
+    await page.keyboard.type("Int"); // type-ahead picks "Interviewing" and commits — same on macOS and Linux
+    await expect(page.getByRole("region", { name: /^Interviewing:/ }).getByRole("link", { name: graduate.fullName })).toBeVisible();
+    await expect.poll(async () => (await db.referral.findUniqueOrThrow({ where: { id: r.id } })).status).toBe("interviewing");
   });
 });
 
