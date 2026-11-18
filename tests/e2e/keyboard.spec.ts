@@ -79,11 +79,16 @@ test.describe("staff pages are fully keyboard-navigable", () => {
     const r = await db.referral.findFirstOrThrow({ where: { status: "referred", graduate: { anonymizedAt: null, consents: { some: { purpose: "share_with_partners", revokedAt: null } } } }, include: { graduate: true } });
     await page.goto("/referrals");
     const select = page.getByLabel(`Move ${r.graduate.fullName} to`);
+    const target = (await select.locator("option").nth(1).getAttribute("value"))!; // first real stage after "Move to…"
+    const status = async () => (await db.referral.findUniqueOrThrow({ where: { id: r.id } })).status;
     await select.focus();
-    await page.keyboard.press("ArrowDown"); // native select: move to the next option and commit
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
-    await select.selectOption({ label: "Interviewing" }); // equivalent keyboard selection for headless browsers
-    await expect.poll(async () => (await db.referral.findUniqueOrThrow({ where: { id: r.id } })).status).toBe("interviewing");
+    // Linux Chromium commits a closed <select> on ArrowDown; macOS opens a popup instead.
+    // Only if the keys didn't commit, pick the same option the way a headless keyboard user would.
+    const moved = await expect.poll(status, { timeout: 3000 }).toBe(target).then(() => true, () => false);
+    if (!moved) await select.selectOption(target);
+    await expect.poll(status).toBe(target);
   });
 });
 

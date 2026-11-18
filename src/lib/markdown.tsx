@@ -31,7 +31,7 @@ export function Markdown({ source }: { source: string }) {
       }
       const [head, ...body] = rows;
       out.push(
-        <div key={i} className="overflow-x-auto"><table className="w-full text-sm">
+        <div key={i} role="region" aria-label="Table" tabIndex={0} className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr>{head!.map((c, j) => <th key={j} scope="col" className="border-b border-border px-2 py-1 text-left">{inline(c)}</th>)}</tr></thead>
           <tbody>{body.map((r, j) => <tr key={j}>{r.map((c, k) => <td key={k} className="border-b border-border px-2 py-1 align-top">{inline(c)}</td>)}</tr>)}</tbody>
         </table></div>,

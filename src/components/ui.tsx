@@ -93,7 +93,8 @@ export function EmptyState({ children }: { children: ReactNode }) {
 
 export function Table({ caption, children, className }: { caption: string; children: ReactNode; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto rounded-lg border border-border bg-surface", className)}>
+    // Focusable region: a table wider than the screen must be scrollable with the keyboard too (WCAG 2.1.1).
+    <div role="region" aria-label={caption} tabIndex={0} className={cn("overflow-x-auto rounded-lg border border-border bg-surface", className)}>
       <table className="w-full border-collapse text-sm">
         <caption className="sr-only">{caption}</caption>
         {children}
