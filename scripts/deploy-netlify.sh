@@ -18,7 +18,7 @@ REV="$(git rev-parse --short HEAD)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "Exporting commit $REV…"
+echo "Exporting commit ${REV}..."
 git archive HEAD | tar -x -C "$WORK"
 cd "$WORK"
 npm ci --no-audit --no-fund
