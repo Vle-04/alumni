@@ -15,6 +15,16 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 REV="$(git rev-parse --short HEAD)"
+
+# Secret site variables aren't given to local builds, so fetch the production database's
+# connection string for the migration step (never printed).
+DATABASE_URL="$(netlify database status --branch production --show-credentials --json 2>/dev/null \
+  | grep -oE 'postgres(ql)?://[^"[:space:]]+' | head -1 || true)"
+if [ -z "$DATABASE_URL" ]; then
+  echo "Couldn't read the production database URL (netlify login? linked site?)." >&2
+  exit 1
+fi
+export DATABASE_URL
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
