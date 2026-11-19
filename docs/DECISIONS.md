@@ -33,7 +33,7 @@ Set `ACADEMY_TIMEZONE` to the Academy's real zone. Graduates can have their own 
 ## Authentication & access
 
 **D8. Staff sign-in is invitation-only.**
-An Admin creates the user first. Magic links (15 minutes, single use) or optional OIDC SSO.
+An Admin creates the user first. *(Superseded by D100: email + password, with Google/SSO for non-admins.)* Magic links (15 minutes, single use) or optional OIDC SSO.
 Database sessions last 8 hours. Role and active flag are re-read on every request, so demotions and deactivations take effect immediately. Deactivating a user deletes their sessions.
 
 **D9. The sign-in form never reveals whether an email has an account.**
@@ -445,3 +445,16 @@ Keys named exactly `ip`, `IP`, `ipAddress`, `remoteAddress`, `x-forwarded-for`, 
 - **Proof:** `tests/integration/deletion-shared.test.ts` deletes "Mark Will" and checks:
   - **Gone:** "Mark Will" and their email.
   - **Unchanged:** "marketing", "will", another graduate's opening and profile, a shared company name, a partner contact named "Will Smith", and the keys of another person's audit entry.
+
+## Staff sign-in with passwords
+
+**D100. Email + password for staff; Google only for non-admins; no sign-up.**
+- **Request:** staff sign in with email and password and land on the main page; non-admin staff may also use Google; admins use email + password only. Accounts already exist, so there is no sign-up.
+- **Magic links are removed.** The Auth.js email provider is gone, so `/api/auth/signin/email` no longer exists. This also closes a gap: that endpoint could be called directly and skipped the login form's rate limit.
+- **Passwords:** scrypt (N=2^15, r=8, p=1, 16-byte salt) from Node's crypto, so there is no native dependency. The parameters are stored in each hash so they can be raised later. Minimum 12 characters.
+- **Sessions:** password sign-in creates a normal Auth.js database session row and sets Auth.js's own cookie. `auth()`, sign-out, deactivation (deletes sessions) and the 8-hour lifetime therefore work the same for every method. Auth.js's Credentials provider was not used because it forces JWT sessions, which can't be revoked.
+- **No account enumeration:** unknown emails, wrong passwords, deactivated users and users with no password yet all get the same message. Unknown emails still spend the time of a real hash check.
+- **Limits:** sign-in allows 10 attempts per account and 20 per IP per 15 minutes; reset requests allow 3 per account and 10 per IP. A per-account limit lets an attacker briefly lock out a known address (including an admin's) for at most 15 minutes. We accept that in exchange for stopping password guessing.
+- **Setting a password:** emailed one-time links (72 h after an invite, 1 h for "forgot password"). Only a keyed hash of the token is stored, in Auth.js's `VerificationToken` table, so the existing housekeeping job deletes expired ones. Using the link signs the user out everywhere. In a new deployment, `npm run user:set-password` sets the first admin's password.
+- **Google:** linked by email to the existing account (`allowDangerousEmailAccountLinking`). This is safe only because the `signIn` callback also requires `email_verified` and an existing, active, non-admin user. The same admin rule applies to OIDC SSO.
+- **Proof:** `tests/integration/staff-auth.test.ts`, `tests/e2e/staff-login.spec.ts`, and `tests/e2e-tls/cookies.spec.ts` (Secure/HttpOnly session cookie over HTTPS; reset links ignore a forged Host).

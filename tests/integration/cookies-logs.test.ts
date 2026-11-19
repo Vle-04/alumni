@@ -39,7 +39,7 @@ describe("CSRF", () => {
   it("leaves safe methods and self-protected endpoints alone", () => {
     expect(isCrossSite(new NextRequest("https://alumni.example.org/graduates", { headers: { origin: "https://evil.example" } }))).toBe(false);
     expect(isCrossSite(post("/api/unsubscribe/tok", {}))).toBe(false);
-    expect(isCrossSite(post("/api/auth/signin/email", { origin: "https://evil.example" }))).toBe(false); // Auth.js checks its CSRF token
+    expect(isCrossSite(post("/api/auth/signin/google", { origin: "https://evil.example" }))).toBe(false); // Auth.js checks its CSRF token
   });
 });
 

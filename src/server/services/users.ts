@@ -4,6 +4,7 @@ import { prisma } from "../db";
 import { audit } from "../audit";
 import { requirePermission, type RequestContext } from "../context";
 import { ConflictError, NotFoundError, ValidationError } from "../errors";
+import { sendPasswordSetupLink } from "./staff-auth";
 
 export const userInputSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email()),
@@ -13,16 +14,17 @@ export const userInputSchema = z.object({
 
 export async function listUsers(ctx: RequestContext) {
   requirePermission(ctx, "user:manage");
-  return prisma.user.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }], select: { id: true, email: true, name: true, role: true, active: true, lastLoginAt: true, createdAt: true } });
+  return prisma.user.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }], select: { id: true, email: true, name: true, role: true, active: true, lastLoginAt: true, createdAt: true, passwordChangedAt: true } });
 }
 
-/** Invites a staff member. They can then sign in with a magic link or SSO. */
+/** Invites a staff member and emails them a link to set their password (72 h). */
 export async function inviteUser(ctx: RequestContext, raw: unknown) {
   requirePermission(ctx, "user:manage");
   const input = userInputSchema.parse(raw);
   if (await prisma.user.findUnique({ where: { email: input.email } })) throw new ConflictError("A staff user with this email already exists.");
   const u = await prisma.user.create({ data: input });
   await audit(prisma, ctx, { action: "user.invite", entityType: "User", entityId: u.id, after: { role: u.role, name: u.name } });
+  await sendPasswordSetupLink(ctx, u.id);
   return u.id;
 }
 

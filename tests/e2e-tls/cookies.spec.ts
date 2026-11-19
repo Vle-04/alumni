@@ -1,6 +1,6 @@
 /**
  * AUDIT 20: against the production build served over real HTTPS, the actual Set-Cookie headers
- * for staff sessions, graduate sessions and partner sessions are Secure, HttpOnly and SameSite.
+ * for staff sessions (password sign-in), graduate sessions and partner sessions are Secure, HttpOnly and SameSite.
  */
 import { expect, test, type APIResponse } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
@@ -24,29 +24,40 @@ function expectHardened(line: string, sameSite: RegExp = /SameSite=Lax/i) {
 
 test.afterAll(() => db.$disconnect());
 
-test("staff session cookie (magic-link sign-in over HTTPS)", async ({ request }) => {
-  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
-  const csrfRes = await request.get("/api/auth/csrf");
+test("staff session cookie (email + password sign-in over HTTPS)", async ({ page, context }) => {
+  const csrfRes = await page.request.get("/api/auth/csrf");
   expectHardened(cookie(csrfRes, "__Host-authjs.csrf-token"));
-  const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
-  // A forged host header must not change where the emailed link points (host-header poisoning).
-  await request.post("/api/auth/signin/email", { form: { csrfToken, email: "careers@academy.example", callbackUrl: "/" }, maxRedirects: 0, headers: { "x-forwarded-host": "evil.example" } });
+
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("careers@academy.example");
+  await page.getByLabel("Password").fill(process.env.SEED_STAFF_PASSWORD || "alumni-dev-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForURL("**/dashboard");
+
+  const session = (await context.cookies()).find((c) => c.name === "__Secure-authjs.session-token");
+  expect(session, "staff session cookie").toBeTruthy();
+  expect(session).toMatchObject({ secure: true, httpOnly: true, sameSite: "Lax", path: "/" });
+  // and it really signs the user in over HTTPS
+  expect((await page.request.get("/dashboard", { maxRedirects: 0 })).status()).toBe(200);
+});
+
+test("password-reset links always point at APP_URL, whatever Host the request claims", async ({ page }) => {
+  await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
+  await page.setExtraHTTPHeaders({ "x-forwarded-host": "evil.example" });
+  await page.goto("/login/forgot");
+  await page.getByLabel("Email").fill("careers2@academy.example");
+  await page.getByRole("button", { name: "Email me a reset link" }).click();
+  await expect(page.getByText("a link to reset the password is on its way")).toBeVisible();
 
   let link = "";
   for (let i = 0; i < 30 && !link; i++) {
     const list = (await (await fetch(`${MAILPIT}/api/v1/messages`)).json()) as { messages: { ID: string; To: { Address: string }[] }[] };
-    const msg = list.messages.find((m) => m.To[0]?.Address === "careers@academy.example");
+    const msg = list.messages.find((m) => m.To[0]?.Address === "careers2@academy.example");
     if (msg) link = ((await (await fetch(`${MAILPIT}/api/v1/message/${msg.ID}`)).json()) as { Text: string }).Text.match(/https:\/\/\S+/)![0];
     else await new Promise((r) => setTimeout(r, 300));
   }
-  expect(link.startsWith("https://localhost:8443/api/auth/callback/email")).toBe(true);
+  expect(link.startsWith("https://localhost:8443/login/reset?token=")).toBe(true);
   expect(link).not.toContain("evil.example");
-  const callback = await request.get(link, { maxRedirects: 0 });
-  expect(callback.status()).toBe(302);
-  const session = cookie(callback, "__Secure-authjs.session-token");
-  expectHardened(session);
-  // and it really signs the user in over HTTPS
-  expect((await request.get("/dashboard", { maxRedirects: 0 })).status()).toBe(200);
 });
 
 test("graduate session cookie (personal link over HTTPS)", async ({ request }) => {

@@ -32,6 +32,7 @@ export function middleware(request: NextRequest) {
   const dev = process.env.NODE_ENV === "development";
   const https = (process.env.APP_URL ?? "").startsWith("https://");
   const sso = process.env.AUTH_OIDC_ISSUER ? ` ${new URL(process.env.AUTH_OIDC_ISSUER).origin}` : "";
+  const google = process.env.GOOGLE_CLIENT_ID ? " https://accounts.google.com" : "";
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
@@ -41,8 +42,8 @@ export function middleware(request: NextRequest) {
     "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
-    // Form posts may redirect to the SSO provider during staff sign-in.
-    `form-action 'self'${sso}`,
+    // Form posts may redirect to Google / the SSO provider during staff sign-in.
+    `form-action 'self'${sso}${google}`,
     "frame-ancestors 'none'",
     ...(https ? ["upgrade-insecure-requests"] : []),
   ].join("; ");

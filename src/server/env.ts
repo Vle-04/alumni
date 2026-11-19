@@ -13,6 +13,8 @@ const schema = z.object({
   AUTH_OIDC_ISSUER: z.string().optional(),
   AUTH_OIDC_CLIENT_ID: z.string().optional(),
   AUTH_OIDC_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
   EMAIL_PROVIDER: z.enum(["console", "smtp", "resend"]).default("console"),
   EMAIL_FROM: z.string().default("Academy Careers <careers@academy.example>"),
   SMTP_HOST: z.string().default("localhost"),

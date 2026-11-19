@@ -21,6 +21,10 @@ import { DEFAULT_SKILL_SYNONYMS } from "../src/domain/skills/normalize";
 import { addDays, addMonthsUtc } from "../src/domain/records/staleness";
 import { normalizeCompanyName } from "../src/domain/companies/normalize";
 import { MILESTONES } from "../src/domain/enums";
+import { hashPassword } from "../src/server/password";
+
+/** Dev/test password for every seeded staff account. Override with SEED_STAFF_PASSWORD. */
+const SEED_STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD || "alumni-dev-password";
 
 const prisma = new PrismaClient();
 faker.seed(20261117);
@@ -86,14 +90,16 @@ async function main() {
   }
   console.log("Seeding…");
 
-  // Staff
+  // Staff (dev/test only: every seeded account gets the same password)
+  const passwordHash = await hashPassword(SEED_STAFF_PASSWORD);
+  const passwordChangedAt = new Date();
   await prisma.user.createMany({
     data: [
-      { email: "admin@academy.example", name: "Ada Admin", role: "ADMIN" },
-      { email: "careers@academy.example", name: "Casey Careers", role: "CAREER_SERVICES" },
-      { email: "careers2@academy.example", name: "Robin Placement", role: "CAREER_SERVICES" },
-      { email: "marketing@academy.example", name: "Morgan Marketing", role: "LEADERSHIP" },
-    ],
+      { email: "admin@academy.example", name: "Ada Admin", role: "ADMIN" as const },
+      { email: "careers@academy.example", name: "Casey Careers", role: "CAREER_SERVICES" as const },
+      { email: "careers2@academy.example", name: "Robin Placement", role: "CAREER_SERVICES" as const },
+      { email: "marketing@academy.example", name: "Morgan Marketing", role: "LEADERSHIP" as const },
+    ].map((u) => ({ ...u, passwordHash, passwordChangedAt })),
   });
   const careers = await prisma.user.findUniqueOrThrow({ where: { email: "careers@academy.example" } });
   const careers2 = await prisma.user.findUniqueOrThrow({ where: { email: "careers2@academy.example" } });
@@ -355,7 +361,7 @@ async function main() {
     referrals: await prisma.referral.count(),
   };
   console.log("Seed complete:", counts);
-  console.log("Staff sign-in emails: admin@academy.example, careers@academy.example, marketing@academy.example (links appear in Mailpit at http://localhost:8025)");
+  console.log(`Staff sign-in: admin@academy.example, careers@academy.example, marketing@academy.example — password "${SEED_STAFF_PASSWORD}"`);
 }
 
 main()

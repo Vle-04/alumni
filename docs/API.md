@@ -11,7 +11,7 @@ Both kinds call the same **service layer** (`src/server/services/*`). Every serv
 
 | Who | How | Lifetime |
 |---|---|---|
-| **Staff** | Auth.js email magic link (invitation-only) or OIDC SSO. Session cookie `authjs.session-token` (`__Secure-` prefix over HTTPS). | 8 hours; role and active flag re-read on every request |
+| **Staff** | Email + password via a server action on `/login` (invitation-only; admins password-only), or Google / OIDC SSO through Auth.js for non-admins. Session cookie `authjs.session-token` (`__Secure-` prefix over HTTPS). | 8 hours; role and active flag re-read on every request |
 | **Graduate** | Personal link `/u/<token>`, exchanged for the `alumni_grad` cookie | Link 30 days; session 2 hours; both revoked by rotating the token version |
 | **Partner contact** | Portal link `/p/<token>`, exchanged for the `alumni_partner` cookie | Link 90 days; session 8 hours; revocable per contact |
 

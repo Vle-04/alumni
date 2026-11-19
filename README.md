@@ -27,7 +27,7 @@ docker compose up -d --build          # Postgres (host port 5440), Mailpit, web 
 docker compose exec web npm run db:seed
 ```
 
-Open http://localhost:3000 and sign in with a seeded staff email. The sign-in link arrives in **Mailpit** at http://localhost:8025.
+Open http://localhost:3000 and sign in with a seeded staff email and the dev password `alumni-dev-password` (set `SEED_STAFF_PASSWORD` before seeding to change it). Password-reset emails arrive in **Mailpit** at http://localhost:8025.
 
 | Email | Role | Sees |
 |---|---|---|
@@ -53,6 +53,7 @@ npm run dev            # http://localhost:3000
 | `npm start` | Production server (after `npm run build`): `server.ts` wrapping Next.js; resolves the client IP from the socket (see Deploying) |
 | `npm run worker` | Background job worker (pg-boss) |
 | `npm run jobs:run -- <job>` | Run one job immediately (no argument lists the jobs) |
+| `npm run user:set-password -- <email>` | Set a staff password from the server (prints a generated one, or uses `STAFF_PASSWORD`). Add `--create ADMIN "Full Name"` to create the first admin in a new deployment |
 | `npm run db:migrate` | Apply committed migrations |
 | `npm run db:seed` | Seed realistic fake data. Refuses to run on a non-empty database. |
 | `npm run db:reset` | Drop, re-migrate and re-seed the **dev** database |
@@ -77,6 +78,16 @@ Jobs run in the `worker` process on **pg-boss**, a durable queue stored in the s
 | `housekeeping` | daily 03:17 | Deletes expired one-time codes, rate-limit counters and staff sign-in tokens |
 
 Run any job by hand: `npm run jobs:run -- survey-tick`. Failed emails appear under **Surveys → Failed emails**, where staff can retry or dismiss them.
+
+## How staff sign in
+
+- **No sign-up.** An admin adds each staff member under **Admin → Staff users**; the new user gets an email with a link (72 hours, single use) to choose a password.
+- **Everyone** can sign in with email + password, and lands on the main page (dashboard, or reports for Leadership).
+- **Non-admin staff** can also use **Continue with Google** (or OIDC SSO), matched by email. Google must report the email as verified, and the account must already exist and be active.
+- **Admins** can sign in only with email + password; Google/SSO is refused for them.
+- **Forgot password** emails a reset link (1 hour, single use, never reveals whether the email is registered). Setting a password signs the user out everywhere.
+- **Limits:** 10 attempts per account and 20 per IP every 15 minutes. Passwords need at least 12 characters and are hashed with scrypt.
+- **Google setup:** create an OAuth client (Web application) in Google Cloud Console with the redirect URI `$APP_URL/api/auth/callback/google`, then set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The button appears only when both are set.
 
 ## How graduates use it
 
@@ -110,7 +121,7 @@ flowchart LR
     MW[middleware<br/>nonce CSP · CSRF origin check]
     UI[pages + server actions<br/>parseArgs → Zod]
     RH[route handlers<br/>/u /p /api/*]
-    AUTH[Auth.js<br/>magic link / OIDC]
+    AUTH[Auth.js<br/>password / Google / OIDC]
   end
 
   subgraph Server["src/server — adapters"]
@@ -208,6 +219,7 @@ Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also sh
 - **Rotating the encryption key:** prepend a new key, e.g. `DATA_ENCRYPTION_KEYS=v2:<new>,v1:<old>`. New writes use v2 and old data stays readable.
 - **Do not rotate `BLIND_INDEX_KEY`** without re-indexing emails.
 - **Email:** use `EMAIL_PROVIDER=resend` (idempotent sends) where possible. With SMTP, a send interrupted by a crash is marked *uncertain* and never resent automatically.
+- **First admin:** after `prisma migrate deploy`, run `npm run user:set-password -- you@example.org --create ADMIN "Your Name"` and sign in with the printed password.
 - **Workers:** run at least one `worker`. Several are safe, since pg-boss runs each cron tick once.
 
 ## Acceptance criteria
@@ -236,7 +248,7 @@ Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also sh
 ## Roadmap
 
 1. ✅ **Foundation**
-   - Schema and migrations, staff auth (invite-only magic link + optional SSO), roles, audit log
+   - Schema and migrations, staff auth (invite-only, email + password; Google/SSO for non-admins), roles, audit log
    - Encryption, graduate records (list, filters, stale view, detail, create/edit), employment timeline
    - CSV import with dry run, company normalisation and merge queue
    - Seed data, CI

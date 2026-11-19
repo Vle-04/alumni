@@ -21,7 +21,7 @@ export const JOBS: JobDef[] = [
   {
     name: "housekeeping",
     cron: "17 3 * * *",
-    description: "Delete expired one-time codes, rate-limit buckets and sign-in tokens",
+    description: "Delete expired one-time codes, rate-limit buckets and password-reset tokens",
     run: async () => {
       const dayAgo = new Date(Date.now() - 86_400_000);
       const [codes, buckets, tokens] = await Promise.all([
