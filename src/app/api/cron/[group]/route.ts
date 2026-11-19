@@ -3,22 +3,15 @@
  * this; see netlify/functions). Protected by CRON_SECRET; disabled (404) when it is not set.
  * Every job is idempotent, so overlapping or repeated calls never duplicate effects.
  */
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { validatedRoute } from "@/lib/route";
 import { logger } from "@/server/logger";
+import { opsAuthorized as authorized } from "@/server/ops/secret";
 import { CRON_GROUPS, JOBS } from "@/worker/jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 26;
-
-const sha = (s: string) => createHash("sha256").update(s).digest();
-function authorized(header: string | null): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || secret.length < 32 || !header) return false;
-  return timingSafeEqual(sha(header), sha(`Bearer ${secret}`));
-}
 
 export const POST = validatedRoute(
   { params: z.object({ group: z.enum(["frequent", "daily"]) }).strict() },

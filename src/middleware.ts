@@ -5,8 +5,8 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 
-/** Paths with their own CSRF defence: Auth.js (CSRF token), RFC 8058 unsubscribe (token in URL, mail clients send no Origin), cron (bearer secret, no cookies). */
-const CSRF_EXEMPT = ["/api/auth/", "/api/unsubscribe/", "/api/cron/"];
+/** Paths with their own CSRF defence: Auth.js (CSRF token), RFC 8058 unsubscribe (token in URL, mail clients send no Origin), cron/ops (bearer secret, no cookies). */
+const CSRF_EXEMPT = ["/api/auth/", "/api/unsubscribe/", "/api/cron/", "/api/ops/"];
 
 /**
  * CSRF: any state-changing request must come from this site. Browsers always send Origin on

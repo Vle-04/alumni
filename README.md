@@ -226,11 +226,11 @@ Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also sh
 
 The app also runs on Netlify (serverless) without the custom server or the worker process.
 **Deploys are built on your own computer:** run `npm run deploy:netlify` (needs the Netlify CLI, logged in). It builds a clean export of the last commit, so the local `.env` never reaches production. Automatic builds from GitHub are turned off for the site.
-- **Database:** Netlify Database (`@netlify/database`). Its connection string is set as `DATABASE_URL` for the production context (otherwise `NETLIFY_DB_URL` is used). `npm run deploy:netlify` runs `prisma migrate deploy` against it before building.
+- **Database:** Netlify Database (`@netlify/database`). Netlify gives the deployed app `NETLIFY_DB_URL` (owner rights), which is used as `DATABASE_URL`. The CLI only gets a read-only user, so `npm run deploy:netlify` applies migrations through the app right after publishing (`POST /api/ops/migrate`). This is compatible with Prisma's `_prisma_migrations` table, and each migration runs in its own transaction. Keep migrations backward-compatible, because new code goes live a few seconds before they run.
 - **Client IP:** set `CLIENT_IP_HEADER=x-nf-client-connection-ip`. Netlify overwrites this header on every request, and the app reads it directly.
 - **Background jobs:** the scheduled functions in `netlify/functions` call `POST /api/cron/frequent` (every 5 minutes: outbox and surveys) and `/api/cron/daily` (retention and housekeeping), authenticated with `CRON_SECRET` (at least 32 characters). The route is disabled when `CRON_SECRET` is unset.
 - **Environment:** `APP_URL`, `AUTH_SECRET`, `DATA_ENCRYPTION_KEYS`, `BLIND_INDEX_KEY`, `TOKEN_SIGNING_KEY`, `CRON_SECRET`, `CLIENT_IP_HEADER` and the email settings, set with `netlify env:import`. Keep a backup of the keys, because they can't be recovered.
-- **First admin:** `DATABASE_URL="$(netlify database status --branch production --show-credentials …)" npm run user:set-password -- you@example.org --create ADMIN "Your Name"`.
+- **First admin:** `curl -X POST -H "authorization: Bearer $CRON_SECRET" -H 'content-type: application/json' -d '{"email":"you@example.org","name":"Your Name"}' $APP_URL/api/ops/create-admin` returns a generated password. It only works while no admin exists.
 - **Deploy previews for pull requests are turned off.** Netlify gives each preview a copy of the production database, and this repository is public.
 - **Trade-offs:** cold starts after idle periods; emails go out within about 5 minutes instead of 1; Netlify plan limits apply. Never run `db:seed` against production, because the seeded dev password is public.
 

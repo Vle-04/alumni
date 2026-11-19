@@ -14,7 +14,11 @@ const config: NextConfig = {
   serverExternalPackages: ["pg-boss", "nodemailer", "@react-pdf/renderer"],
   // pdfkit (used by @react-pdf) loads its built-in fonts with a dynamic require that file tracing
   // can't see; serverless hosts (Netlify) then crash with "Cannot find module …/Helvetica.cjs".
-  outputFileTracingIncludes: { "/**": ["./node_modules/pdfkit/js/standard-fonts/**/*", "./node_modules/pdfkit/js/data/**/*"] },
+  outputFileTracingIncludes: {
+    "/**": ["./node_modules/pdfkit/js/standard-fonts/**/*", "./node_modules/pdfkit/js/data/**/*"],
+    // /api/ops/migrate reads the SQL migrations at runtime (Netlify; see src/server/ops/migrate.ts).
+    "/api/ops/*": ["./prisma/migrations/**/*"],
+  },
   experimental: { serverActions: { bodySizeLimit: "5mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
