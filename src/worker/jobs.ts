@@ -33,3 +33,12 @@ export const JOBS: JobDef[] = [
     },
   },
 ];
+
+/**
+ * For hosts without a long-running worker (Netlify): which jobs each scheduled call to
+ * /api/cron/<group> runs. The pg-boss worker ignores this and uses each job's own cron.
+ */
+export const CRON_GROUPS = {
+  frequent: ["outbox-drain", "survey-tick", "outbox-drain"], // drain again so newly queued surveys go out now
+  daily: ["retention", "housekeeping"],
+} as const;

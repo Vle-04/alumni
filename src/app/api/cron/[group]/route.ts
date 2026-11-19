@@ -1,0 +1,41 @@
+/**
+ * Runs background jobs on hosts without a long-running worker (Netlify scheduled functions call
+ * this; see netlify/functions). Protected by CRON_SECRET; disabled (404) when it is not set.
+ * Every job is idempotent, so overlapping or repeated calls never duplicate effects.
+ */
+import { createHash, timingSafeEqual } from "node:crypto";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { validatedRoute } from "@/lib/route";
+import { logger } from "@/server/logger";
+import { CRON_GROUPS, JOBS } from "@/worker/jobs";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 26;
+
+const sha = (s: string) => createHash("sha256").update(s).digest();
+function authorized(header: string | null): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 32 || !header) return false;
+  return timingSafeEqual(sha(header), sha(`Bearer ${secret}`));
+}
+
+export const POST = validatedRoute(
+  { params: z.object({ group: z.enum(["frequent", "daily"]) }).strict() },
+  async (req, { params: { group } }) => {
+    if (!process.env.CRON_SECRET) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (!authorized(req.headers.get("authorization"))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const results: Record<string, unknown> = {};
+    for (const name of CRON_GROUPS[group]) {
+      const job = JOBS.find((j) => j.name === name)!;
+      try {
+        results[name] = await job.run();
+      } catch (err) {
+        logger.error("cron job failed", { job: name, err });
+        results[name] = { error: true };
+      }
+    }
+    return NextResponse.json({ ok: true, results });
+  },
+  () => NextResponse.json({ error: "not_found" }, { status: 404 }),
+);

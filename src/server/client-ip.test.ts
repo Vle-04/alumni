@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeIp, parseTrustedHops, resolveClientIp } from "./client-ip-core";
 import { clientIp } from "./client-ip";
 
@@ -35,5 +35,17 @@ describe("normalizeIp / parseTrustedHops / clientIp", () => {
     expect(clientIp(h)).toBeNull();
     h.set("x-alumni-client-ip", "203.0.113.5");
     expect(clientIp(h)).toBe("203.0.113.5");
+  });
+  describe("CLIENT_IP_HEADER (serverless hosts such as Netlify)", () => {
+    afterEach(() => vi.unstubAllEnvs());
+    it("reads only the platform header; the internal header and x-forwarded-for are ignored", () => {
+      vi.stubEnv("CLIENT_IP_HEADER", "x-nf-client-connection-ip");
+      const h = new Headers({ "x-alumni-client-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2" });
+      expect(clientIp(h)).toBeNull();
+      h.set("x-nf-client-connection-ip", "203.0.113.7");
+      expect(clientIp(h)).toBe("203.0.113.7");
+      h.set("x-nf-client-connection-ip", "not-an-ip");
+      expect(clientIp(h)).toBeNull();
+    });
   });
 });

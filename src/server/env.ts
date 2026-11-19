@@ -33,6 +33,7 @@ let cached: Env | undefined;
 /** Validated environment. Parsed lazily so `next build` works without runtime secrets. */
 export function env(): Env {
   if (cached) return cached;
+  if (!process.env.DATABASE_URL && process.env.NETLIFY_DB_URL) process.env.DATABASE_URL = process.env.NETLIFY_DB_URL; // Netlify Database
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
