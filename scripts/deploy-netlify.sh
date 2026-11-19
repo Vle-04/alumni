@@ -32,4 +32,7 @@ echo "Exporting commit ${REV}..."
 git archive HEAD | tar -x -C "$WORK"
 cd "$WORK"
 npm ci --no-audit --no-fund
+echo "Applying database migrations to production..."
+npx prisma migrate deploy
+unset DATABASE_URL # the deployed app gets it from the site's environment variables
 netlify deploy --build --prod --context production --site "$SITE" --message "Local deploy of $REV"

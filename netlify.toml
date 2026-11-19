@@ -10,10 +10,8 @@
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
 
-# Production deploys apply the Prisma migrations to Netlify Database first (never from deploy
-# previews). NETLIFY_DB_URL is provided by Netlify once the database exists; Prisma reads DATABASE_URL.
-[context.production]
-  command = "DATABASE_URL=\"${DATABASE_URL:-$NETLIFY_DB_URL}\" npx prisma migrate deploy && npm run build"
+# Deploys are built on the developer's computer (npm run deploy:netlify), which applies the
+# Prisma migrations to production before building; the build itself never touches the database.
 
 [functions]
   # Prisma's query engine must ship with the functions.

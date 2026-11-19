@@ -226,7 +226,7 @@ Full details: [docs/PRIVACY.md](docs/PRIVACY.md) (written for graduates, also sh
 
 The app also runs on Netlify (serverless) without the custom server or the worker process.
 **Deploys are built on your own computer:** run `npm run deploy:netlify` (needs the Netlify CLI, logged in). It builds a clean export of the last commit, so the local `.env` never reaches production. Automatic builds from GitHub are turned off for the site.
-- **Database:** Netlify Database (`@netlify/database`). Its connection string is set as `DATABASE_URL` for the production context (otherwise `NETLIFY_DB_URL` is used). Production builds run `prisma migrate deploy` first (`netlify.toml`).
+- **Database:** Netlify Database (`@netlify/database`). Its connection string is set as `DATABASE_URL` for the production context (otherwise `NETLIFY_DB_URL` is used). `npm run deploy:netlify` runs `prisma migrate deploy` against it before building.
 - **Client IP:** set `CLIENT_IP_HEADER=x-nf-client-connection-ip`. Netlify overwrites this header on every request, and the app reads it directly.
 - **Background jobs:** the scheduled functions in `netlify/functions` call `POST /api/cron/frequent` (every 5 minutes: outbox and surveys) and `/api/cron/daily` (retention and housekeeping), authenticated with `CRON_SECRET` (at least 32 characters). The route is disabled when `CRON_SECRET` is unset.
 - **Environment:** `APP_URL`, `AUTH_SECRET`, `DATA_ENCRYPTION_KEYS`, `BLIND_INDEX_KEY`, `TOKEN_SIGNING_KEY`, `CRON_SECRET`, `CLIENT_IP_HEADER` and the email settings, set with `netlify env:import`. Keep a backup of the keys, because they can't be recovered.
