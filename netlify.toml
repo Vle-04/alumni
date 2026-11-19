@@ -10,8 +10,12 @@
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
 
-# Deploys are built on the developer's computer (npm run deploy:netlify), which applies the
-# Prisma migrations to production before building; the build itself never touches the database.
+# Two ways to deploy: Netlify builds main (a push, or "Deploy" in the Netlify dashboard), or
+# `npm run deploy:netlify` builds on the developer's computer. Either way the build never touches the
+# database; the new deploy applies pending migrations via POST /api/ops/migrate (the plugin below for
+# Netlify builds, the deploy script for local ones).
+[[plugins]]
+  package = "/netlify/plugins/migrate-after-deploy"
 
 [functions]
   # Prisma's query engine must ship with the functions.
